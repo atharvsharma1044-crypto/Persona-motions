@@ -1,0 +1,148 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum ProjectMode {
+  STORY_TO_VIDEO
+  MOTION_SWAP
+}
+
+enum ProjectStatus {
+  DRAFT
+  IN_PROGRESS
+  COMPLETED
+  ARCHIVED
+}
+
+enum ShotStatus {
+  PENDING
+  GENERATING
+  COMPLETED
+  FAILED
+}
+
+enum JobStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum JobType {
+  MOTION_SWAP
+  SHOT_SYNTHESIS
+  STORY_STITCH
+  EMBEDDING_EXTRACTION
+}
+
+model User {
+  id             String          @id @default(uuid())
+  email          String          @unique
+  name           String?
+  avatarUrl      String?
+  characters     Character[]
+  projects       Project[]
+  generationJobs GenerationJob[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@map("users")
+}
+
+model Character {
+  id              String          @id @default(uuid())
+  userId          String
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String
+  avatarUrl       String?
+  referenceImages Json            // Stored as JSON array: [{ url: string, angle: 'front' | 'side' | '45_degree' | 'expression', isDefault?: boolean }]
+  embeddingData   Json?           // Optional precomputed face/body embedding vectors or model weights (InstantID/IP-Adapter)
+  projects        Project[]
+  generationJobs  GenerationJob[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([userId])
+  @@map("characters")
+}
+
+model Project {
+  id             String          @id @default(uuid())
+  userId         String
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title          String
+  mode           ProjectMode
+  status         ProjectStatus   @default(DRAFT)
+  characterId    String?
+  character      Character?      @relation(fields: [characterId], references: [id], onDelete: SetNull)
+  
+  // Motion Swap specific metadata
+  drivingVideoUrl String?
+  trimStartTime   Float?
+  trimEndTime     Float?
+  
+  // Story-to-video shots
+  shots          Shot[]
+  stitchedVideoUrl String?
+
+  generationJobs GenerationJob[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@map("projects")
+}
+
+model Shot {
+  id              String      @id @default(uuid())
+  projectId       String
+  project         Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sequenceOrder   Int
+  prompt          String      @db.Text
+  negativePrompt  String?     @db.Text
+  cameraMovement  String      // e.g. "Orbit Left", "Push In Close-Up", "Static Medium Shot", "Crane Down"
+  durationSeconds Float       @default(4.0)
+  characterState  String?     // e.g. "smiling looking over shoulder", "running in rain"
+  seed            BigInt?
+  outputVideoUrl  String?
+  status          ShotStatus  @default(PENDING)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([projectId])
+  @@index([sequenceOrder])
+  @@map("shots")
+}
+
+model GenerationJob {
+  id              String      @id @default(uuid())
+  userId          String
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId       String?
+  project         Project?    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  characterId     String?
+  character       Character?  @relation(fields: [characterId], references: [id], onDelete: SetNull)
+  type            JobType
+  status          JobStatus   @default(QUEUED)
+  progressPercent Float       @default(0.0)
+  currentStage    String?     // e.g. "Extracting poses via DWPose", "Diffusion synthesis (step 18/30)"
+  error           String?     @db.Text
+  params          Json?       // Input parameters snapshot
+  resultUrl       String?
+  workerId        String?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([projectId])
+  @@map("generation_jobs")
+}
