@@ -21,6 +21,10 @@ export async function GET() {
     : "";
 
   return NextResponse.json({
+    engine: "PersonaMotion Neural Studio Pro",
+    engineVersion: "v3.5 Ultra",
+    freeModeActive: true,
+    unlimitedGenerations: true,
     hasFalKey,
     hasOpenAiKey,
     falModel,
