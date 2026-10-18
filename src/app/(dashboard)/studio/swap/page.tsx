@@ -173,6 +173,9 @@ export default function MotionSwapStudioPage() {
   const [enableRealEsrgan, setEnableRealEsrgan] = useState<boolean>(true);
   const [preserveBg, setPreserveBg] = useState<boolean>(true);
   const [motionFidelity, setMotionFidelity] = useState<number>(0.85);
+  const [blendStrength, setBlendStrength] = useState<number>(0.98);
+  const [enableColorHarmonization, setEnableColorHarmonization] = useState<boolean>(true);
+  const [enableHeadRotation, setEnableHeadRotation] = useState<boolean>(true);
 
   // Job Orchestration & SSE Streaming State
   const [jobId, setJobId] = useState<string | null>(null);
@@ -355,6 +358,9 @@ export default function MotionSwapStudioPage() {
           trimEndTime: trimEnd,
           motionFidelity,
           customPrompt: customPrompt.trim() || undefined,
+          blendStrength,
+          enableColorHarmonization,
+          enableHeadRotation,
           onProgress: ({ progressPercent: pct, stage }) => {
             setProgressPercent(pct);
             setCurrentStage(stage);
@@ -1094,6 +1100,58 @@ export default function MotionSwapStudioPage() {
                   step={0.05}
                   value={motionFidelity}
                   onChange={(e) => setMotionFidelity(parseFloat(e.target.value))}
+                  className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-violet-500"
+                />
+              </div>
+
+              {/* Adaptive Lighting & Color Harmonization */}
+              <div className="flex items-center justify-between p-3 rounded-lg bg-zinc-950/70 border border-zinc-800/80">
+                <div>
+                  <div className="font-semibold text-zinc-200 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    Adaptive Lighting & Skin Tone Match
+                  </div>
+                  <div className="text-zinc-400 text-[11px]">
+                    Samples scene illumination and adapts character skin tones and ambient shadows dynamically.
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={enableColorHarmonization}
+                  onChange={(e) => setEnableColorHarmonization(e.target.checked)}
+                  className="w-4 h-4 accent-violet-600 rounded cursor-pointer"
+                />
+              </div>
+
+              {/* 3D Head Rotation & Tilt Tracking */}
+              <div className="flex items-center justify-between p-3 rounded-lg bg-zinc-950/70 border border-zinc-800/80">
+                <div>
+                  <div className="font-semibold text-zinc-200">3D Head Rotation & Angle Tracking</div>
+                  <div className="text-zinc-400 text-[11px]">
+                    Rotates and aligns character identity as actor tilts and turns their head.
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={enableHeadRotation}
+                  onChange={(e) => setEnableHeadRotation(e.target.checked)}
+                  className="w-4 h-4 accent-violet-600 rounded cursor-pointer"
+                />
+              </div>
+
+              {/* Identity Blend Strength Slider */}
+              <div className="p-3 rounded-lg bg-zinc-950/70 border border-zinc-800/80 space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="font-semibold text-zinc-200">Identity Blend Opacity</span>
+                  <span className="font-mono text-violet-400">{Math.round(blendStrength * 100)}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.75}
+                  max={1.0}
+                  step={0.01}
+                  value={blendStrength}
+                  onChange={(e) => setBlendStrength(parseFloat(e.target.value))}
                   className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-violet-500"
                 />
               </div>
