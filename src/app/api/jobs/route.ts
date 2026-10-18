@@ -35,6 +35,7 @@ const jobCreateSchema = z.object({
   trimEndTime: z.number().default(10),
   shotId: z.string().optional(),
   shotVideoUrls: z.array(z.string()).optional(),
+  modelEndpoint: z.string().optional(),
   options: z.record(z.unknown()).optional(),
 });
 
@@ -168,6 +169,7 @@ export async function POST(req: NextRequest) {
         referenceImages: resolvedCharacterImage ? [resolvedCharacterImage] : (referenceImages || []),
         referenceImageUrl: resolvedCharacterImage,
         characterImageUrl: resolvedCharacterImage,
+        modelEndpoint: validated.data.modelEndpoint,
         prompt,
         customPrompt,
         trimStartTime,

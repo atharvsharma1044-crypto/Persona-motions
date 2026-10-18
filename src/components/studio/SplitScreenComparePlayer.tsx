@@ -20,7 +20,7 @@ import { formatTimecode } from "@/lib/utils";
 
 interface SplitScreenComparePlayerProps {
   originalVideoUrl: string;
-  generatedVideoUrl: string;
+  generatedVideoUrl?: string | null;
   originalLabel?: string;
   generatedLabel?: string;
   className?: string;
@@ -56,18 +56,23 @@ export function SplitScreenComparePlayer({
   const togglePlay = useCallback(() => {
     const v1 = originalVideoRef.current;
     const v2 = generatedVideoRef.current;
-    if (!v1 || !v2) return;
+    if (!v1) return;
 
     if (isPlaying) {
       v1.pause();
-      v2.pause();
+      if (v2) v2.pause();
       setIsPlaying(false);
     } else {
-      // Sync time before playback start to eliminate drift
-      v2.currentTime = v1.currentTime;
-      Promise.all([v1.play(), v2.play()])
-        .then(() => setIsPlaying(true))
-        .catch((err) => console.warn("Video playback prevented:", err));
+      if (v2) {
+        v2.currentTime = v1.currentTime;
+        Promise.all([v1.play(), v2.play()])
+          .then(() => setIsPlaying(true))
+          .catch((err) => console.warn("Video playback prevented:", err));
+      } else {
+        v1.play()
+          .then(() => setIsPlaying(true))
+          .catch((err) => console.warn("Video playback prevented:", err));
+      }
     }
   }, [isPlaying]);
 
@@ -211,7 +216,31 @@ export function SplitScreenComparePlayer({
 
       {/* Main Video Presentation Stage */}
       <div className="relative w-full aspect-video bg-black overflow-hidden flex items-center justify-center">
-        {displayMode === "split" ? (
+        {!generatedVideoUrl ? (
+          /* Single Driving Video Preview with Ready to Swap Overlay */
+          <div className="relative w-full h-full flex items-center justify-center">
+            <video
+              ref={originalVideoRef}
+              src={originalVideoUrl}
+              loop={isLooping}
+              muted={isMuted}
+              playsInline
+              onTimeUpdate={handleTimeUpdate}
+              onLoadedMetadata={handleLoadedMetadata}
+              onEnded={() => setIsPlaying(false)}
+              className="w-full h-full object-contain"
+            />
+            <div className="absolute top-4 left-4 z-20 pointer-events-none">
+              <span className="px-2.5 py-1 rounded bg-black/70 backdrop-blur border border-zinc-700/60 text-[11px] font-medium text-zinc-300">
+                {originalLabel}
+              </span>
+            </div>
+            <div className="absolute bottom-6 px-4 py-2 rounded-xl bg-zinc-950/85 backdrop-blur-md border border-violet-500/40 text-xs text-zinc-200 shadow-2xl flex items-center gap-2 pointer-events-none">
+              <span className="w-2 h-2 rounded-full bg-violet-400 animate-pulse" />
+              <span>Ready for Character Swap • Select your target character and click <strong>Synthesize Character Swap</strong></span>
+            </div>
+          </div>
+        ) : displayMode === "split" ? (
           /* Split Screen Curtain Slider Mode */
           <div className="relative w-full h-full">
             {/* Generated / Retargeted Video (Bottom Layer) */}

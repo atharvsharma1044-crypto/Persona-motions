@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   Sparkles,
   Zap,
@@ -19,6 +19,10 @@ import {
   Check,
   Film,
   Camera,
+  Key,
+  ExternalLink,
+  AlertTriangle,
+  Play,
 } from "lucide-react";
 import { VideoUploaderTrimmer } from "@/components/studio/VideoUploaderTrimmer";
 import { CharacterVaultSelector } from "@/components/studio/CharacterVaultSelector";
@@ -27,6 +31,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { CharacterModel } from "@/types";
+import { synthesizeNeuralCharacterSwap } from "@/lib/neural_face_swap";
 
 const INITIAL_CHARACTERS: CharacterModel[] = [
   {
@@ -95,9 +100,55 @@ const STYLE_PRESETS = [
   "Retro 80s Synthwave",
 ];
 
+const FAL_MODELS = [
+  {
+    id: "fal-ai/kling-video/v3/standard/motion-control",
+    name: "Kling Motion Control v3",
+    desc: "Industry standard pose & expression retargeting (Recommended)",
+  },
+  {
+    id: "fal-ai/wan-motion",
+    name: "Alibaba Wan Motion 2.1",
+    desc: "Full skeleton pose adaptation matching reference body",
+  },
+  {
+    id: "fal-ai/mimic-motion",
+    name: "Tencent MimicMotion",
+    desc: "Confidence-aware neural pose retargeting",
+  },
+  {
+    id: "fal-ai/pixverse/swap",
+    name: "PixVerse Character Swap",
+    desc: "Video character & face replacement preserving scene",
+  },
+];
+
+const DRIVING_PRESETS = [
+  {
+    id: "preset-action",
+    title: "Cinematic Character Movement",
+    desc: "Human locomotion & dynamic arm choreography",
+    url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4",
+  },
+  {
+    id: "preset-drama",
+    title: "Sci-Fi Character Gestures",
+    desc: "Nuanced upper body & facial dynamic acting",
+    url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
+  },
+];
+
 export default function MotionSwapStudioPage() {
   const [characters, setCharacters] = useState<CharacterModel[]>(INITIAL_CHARACTERS);
   const [selectedCharacter, setSelectedCharacter] = useState<CharacterModel>(INITIAL_CHARACTERS[0]);
+
+  // AI Connection State
+  const [hasFalKey, setHasFalKey] = useState<boolean>(false);
+  const [selectedModel, setSelectedModel] = useState<string>("fal-ai/kling-video/v3/standard/motion-control");
+  const [apiKeyInput, setApiKeyInput] = useState<string>("");
+  const [isSavingKey, setIsSavingKey] = useState<boolean>(false);
+  const [keyNotice, setKeyNotice] = useState<string | null>(null);
+  const [isKeyModalOpen, setIsKeyModalOpen] = useState<boolean>(false);
 
   // Target character mode: "vault" vs "custom"
   const [characterSelectionMode, setCharacterSelectionMode] = useState<"vault" | "custom">("vault");
@@ -108,9 +159,9 @@ export default function MotionSwapStudioPage() {
   // Character style / modification prompt
   const [customPrompt, setCustomPrompt] = useState<string>("");
 
-  // Driving video state (from trimmer)
+  // Driving video state (from trimmer or presets)
   const [drivingVideoUrl, setDrivingVideoUrl] = useState<string>(
-    "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"
+    "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4"
   );
   const [trimStart, setTrimStart] = useState<number>(0);
   const [trimEnd, setTrimEnd] = useState<number>(8.5);
@@ -128,9 +179,54 @@ export default function MotionSwapStudioPage() {
   const [progressPercent, setProgressPercent] = useState<number>(0);
   const [currentStage, setCurrentStage] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(
-    "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyBlazes.mp4"
-  );
+  const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
+  const [swapEngine, setSwapEngine] = useState<"neural" | "cloud">("neural");
+
+  // Load key configuration on mount
+  useEffect(() => {
+    fetch("/api/settings/keys")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.hasFalKey) {
+          setHasFalKey(true);
+        }
+        if (data.falModel) {
+          setSelectedModel(data.falModel);
+        }
+      })
+      .catch((err) => console.warn("Could not check key status:", err));
+  }, []);
+
+  const handleSaveApiKey = async () => {
+    if (!apiKeyInput.trim()) return;
+    try {
+      setIsSavingKey(true);
+      setKeyNotice(null);
+      const res = await fetch("/api/settings/keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          falKey: apiKeyInput.trim(),
+          falModel: selectedModel,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setHasFalKey(true);
+        setKeyNotice(data.message || "Key connected successfully!");
+        setTimeout(() => {
+          setIsKeyModalOpen(false);
+          setKeyNotice(null);
+        }, 1500);
+      } else {
+        setKeyNotice(data.error || "Failed to save key");
+      }
+    } catch (err) {
+      setKeyNotice((err as Error).message);
+    } finally {
+      setIsSavingKey(false);
+    }
+  };
 
   const handleTrimmedVideoReady = (url: string, start: number, end: number) => {
     setDrivingVideoUrl(url);
@@ -150,7 +246,6 @@ export default function MotionSwapStudioPage() {
     try {
       setIsUploadingPhoto(true);
 
-      // Attempt upload to presigned/direct route
       const presignedRes = await fetch("/api/upload/presigned", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -177,7 +272,6 @@ export default function MotionSwapStudioPage() {
         }
       }
 
-      // Local blob URL fallback
       const localUrl = URL.createObjectURL(file);
       setCustomCharacterImageUrl(localUrl);
       setCharacterSelectionMode("custom");
@@ -196,13 +290,71 @@ export default function MotionSwapStudioPage() {
       setIsProcessing(true);
       setErrorMessage(null);
       setProgressPercent(5);
-      setCurrentStage("Initializing Pose & Motion Retargeting pipeline...");
       setGeneratedVideoUrl(null);
 
       const targetImage =
         characterSelectionMode === "custom" && customCharacterImageUrl
           ? customCharacterImageUrl
           : selectedCharacter.avatarUrl || selectedCharacter.referenceImages[0]?.url;
+
+      if (!targetImage) {
+        throw new Error("Please select or upload a target character image first.");
+      }
+
+      // Mode 1: Real-Time Neural Face & Identity Swap (Active by default, zero API key required)
+      if (swapEngine === "neural") {
+        setCurrentStage("Initializing Neural Face & Identity Swap engine...");
+        setProgressPercent(10);
+
+        const swapResult = await synthesizeNeuralCharacterSwap({
+          drivingVideoUrl,
+          characterImageUrl: targetImage,
+          trimStartTime: trimStart,
+          trimEndTime: trimEnd,
+          motionFidelity,
+          customPrompt: customPrompt.trim() || undefined,
+          onProgress: ({ progressPercent: pct, stage }) => {
+            setProgressPercent(pct);
+            setCurrentStage(stage);
+          },
+        });
+
+        setCurrentStage("Saving character replacement video to media library...");
+        const newFilename = `swapped_${Date.now()}.webm`;
+        let finalUrl = swapResult.videoUrl;
+
+        try {
+          const uploadRes = await fetch(
+            `/api/upload/direct?filename=${encodeURIComponent(newFilename)}&folder=rendered_shots`,
+            {
+              method: "PUT",
+              headers: { "Content-Type": swapResult.videoBlob.type || "video/webm" },
+              body: swapResult.videoBlob,
+            }
+          );
+          if (uploadRes.ok) {
+            const uploadData = await uploadRes.json();
+            if (uploadData.publicUrl) {
+              finalUrl = uploadData.publicUrl;
+            }
+          }
+        } catch (uploadErr) {
+          console.warn("Direct upload fallback to blob URL:", uploadErr);
+        }
+
+        setGeneratedVideoUrl(finalUrl);
+        setProgressPercent(100);
+        setCurrentStage("Character replaced successfully! Enjoy your dual-view comparison.");
+        setIsProcessing(false);
+        return;
+      }
+
+      // Mode 2: Cloud Generative Diffusion via Fal.ai / Modal cluster
+      setCurrentStage(
+        hasFalKey
+          ? `Submitting to Fal.ai cloud GPU (${selectedModel})...`
+          : "Connecting to Cloud GPU cluster..."
+      );
 
       // 1. Create job via API
       const res = await fetch("/api/jobs", {
@@ -213,6 +365,7 @@ export default function MotionSwapStudioPage() {
           characterId: selectedCharacter.id,
           characterImageUrl: targetImage,
           customPrompt: customPrompt.trim() || undefined,
+          modelEndpoint: selectedModel,
           drivingVideoUrl,
           referenceImages: targetImage ? [targetImage] : [],
           trimStartTime: trimStart,
@@ -262,7 +415,7 @@ export default function MotionSwapStudioPage() {
       });
 
       eventSource.onerror = (e) => {
-        console.warn("SSE connection closed or ended:", e);
+        console.warn("SSE stream closed:", e);
         setIsProcessing(false);
         eventSource.close();
       };
@@ -291,8 +444,22 @@ export default function MotionSwapStudioPage() {
             <Badge variant="purple" className="text-xs uppercase tracking-wider font-mono">
               Mode B • Motion Clone & Swap
             </Badge>
-            <Badge variant="outline" className="text-xs text-zinc-400">
-              Fal.ai Wan-VACE / MimicMotion + SAM 2 + LivePortrait
+            <Badge
+              variant={hasFalKey ? "success" : "secondary"}
+              className="text-xs cursor-pointer"
+              onClick={() => setIsKeyModalOpen(true)}
+            >
+              {hasFalKey ? (
+                <>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5 animate-pulse" />
+                  Fal.ai GPU Active
+                </>
+              ) : (
+                <>
+                  <Key className="w-3 h-3 mr-1 text-amber-400" />
+                  Connect Fal.ai Key (Live GPU)
+                </>
+              )}
             </Badge>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-zinc-100">
@@ -304,18 +471,28 @@ export default function MotionSwapStudioPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="outline"
+            size="lg"
+            onClick={() => setIsKeyModalOpen(true)}
+            className="text-xs border-zinc-700 hover:border-violet-500"
+          >
+            <Key className="w-3.5 h-3.5 mr-1.5 text-violet-400" />
+            {hasFalKey ? "AI Settings" : "Connect AI Key"}
+          </Button>
+
           <Button
             variant="gradient"
             size="lg"
             onClick={handleStartRetargeting}
             disabled={isProcessing}
-            className="w-full md:w-auto font-semibold shadow-xl shadow-violet-600/25"
+            className="font-semibold shadow-xl shadow-violet-600/25"
           >
             {isProcessing ? (
               <>
                 <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                Retargeting with AI GPU...
+                {swapEngine === "neural" ? "Compositing Swapped Character..." : "Retargeting with Cloud GPU..."}
               </>
             ) : (
               <>
@@ -326,6 +503,183 @@ export default function MotionSwapStudioPage() {
           </Button>
         </div>
       </div>
+
+      {/* AI Processing Engine Selector */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-2.5 shadow-2xl flex flex-col sm:flex-row gap-2">
+        <button
+          type="button"
+          onClick={() => setSwapEngine("neural")}
+          className={`flex-1 p-3 rounded-xl text-left transition border ${
+            swapEngine === "neural"
+              ? "bg-violet-600/20 border-violet-500/80 text-violet-200 shadow-lg shadow-violet-950/50"
+              : "bg-zinc-950/60 border-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"
+          }`}
+        >
+          <div className="flex items-center justify-between mb-1">
+            <span className="font-bold text-xs flex items-center gap-1.5 text-zinc-100">
+              <Zap className="w-3.5 h-3.5 text-amber-400 fill-current" />
+              Neural Face & Identity Swap
+            </span>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 font-mono">
+              Active • Zero API Key Needed
+            </span>
+          </div>
+          <p className="text-[11px] text-zinc-400">
+            Real-time neural face & identity replacement. Tracks facial landmarks and composites target character directly into video.
+          </p>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setSwapEngine("cloud");
+            if (!hasFalKey) setIsKeyModalOpen(true);
+          }}
+          className={`flex-1 p-3 rounded-xl text-left transition border ${
+            swapEngine === "cloud"
+              ? "bg-violet-600/20 border-violet-500/80 text-violet-200 shadow-lg shadow-violet-950/50"
+              : "bg-zinc-950/60 border-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"
+          }`}
+        >
+          <div className="flex items-center justify-between mb-1">
+            <span className="font-bold text-xs flex items-center gap-1.5 text-zinc-100">
+              <Cpu className="w-3.5 h-3.5 text-violet-400" />
+              Cloud Generative Diffusion
+            </span>
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono ${
+              hasFalKey ? "bg-emerald-950/80 border border-emerald-500/40 text-emerald-400" : "bg-amber-950/80 border border-amber-500/40 text-amber-400"
+            }`}>
+              {hasFalKey ? "Fal.ai Connected" : "Requires FAL_KEY"}
+            </span>
+          </div>
+          <p className="text-[11px] text-zinc-400">
+            Full 3D skeletal & diffusion motion synthesis using Kling v3 / Alibaba Wan 2.1 on cloud A100 GPU clusters.
+          </p>
+        </button>
+      </div>
+
+      {/* Fal.ai Key Setup Banner when key is missing */}
+      {!hasFalKey && (
+        <div className="p-4 rounded-xl bg-gradient-to-r from-violet-950/40 via-zinc-900 to-zinc-900 border border-violet-800/50 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="p-2.5 rounded-lg bg-violet-900/40 border border-violet-700/50 text-violet-300 shrink-0 mt-0.5">
+              <Key className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-zinc-100 flex items-center gap-2">
+                Enable Real Cloud AI Character Swapping
+                <Badge variant="purple" className="text-[10px]">Zero GPU Setup</Badge>
+              </h4>
+              <p className="text-xs text-zinc-400 mt-0.5 max-w-xl">
+                Add your Fal.ai Key to run Kling Motion Control, Wan Motion 2.1, and MimicMotion on real A100 GPUs.
+                Or test offline with pre-rendered cinematic motion samples.
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="gradient"
+            size="sm"
+            onClick={() => setIsKeyModalOpen(true)}
+            className="shrink-0 text-xs font-semibold"
+          >
+            <Key className="w-3.5 h-3.5 mr-1.5" /> Configure Fal.ai Key
+          </Button>
+        </div>
+      )}
+
+      {/* AI Key & Model Configuration Modal */}
+      {isKeyModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Cpu className="w-5 h-5 text-violet-400" />
+                <h3 className="font-bold text-zinc-100 text-base">
+                  Fal.ai Cloud GPU Settings
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsKeyModalOpen(false)}
+                className="text-zinc-400 hover:text-zinc-200 text-sm font-mono"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div>
+                <label className="text-zinc-300 font-medium block mb-1">
+                  Fal.ai API Key (`FAL_KEY`)
+                </label>
+                <input
+                  type="password"
+                  placeholder="Paste your key here (e.g. 5d8f...:...)"
+                  value={apiKeyInput}
+                  onChange={(e) => setApiKeyInput(e.target.value)}
+                  className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-zinc-100 focus:outline-none focus:border-violet-500 font-mono"
+                />
+                <div className="flex justify-between items-center mt-1 text-[11px] text-zinc-400">
+                  <span>Current: {hasFalKey ? "Connected" : "Not configured"}</span>
+                  <a
+                    href="https://fal.ai/dashboard/keys"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-violet-400 hover:underline flex items-center gap-1"
+                  >
+                    Get a Free Key <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-zinc-300 font-medium block mb-1">
+                  Target Retargeting AI Model
+                </label>
+                <select
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-zinc-200 focus:outline-none focus:border-violet-500"
+                >
+                  {FAL_MODELS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-zinc-500 mt-1">
+                  {FAL_MODELS.find((m) => m.id === selectedModel)?.desc}
+                </p>
+              </div>
+
+              {keyNotice && (
+                <div className="p-2.5 rounded bg-zinc-950 border border-violet-800/60 text-violet-300 text-[11px]">
+                  {keyNotice}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-zinc-800">
+              <Button variant="ghost" size="sm" onClick={() => setIsKeyModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="gradient"
+                size="sm"
+                onClick={handleSaveApiKey}
+                disabled={isSavingKey || !apiKeyInput.trim()}
+              >
+                {isSavingKey ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Verifying...
+                  </>
+                ) : (
+                  "Save & Activate"
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Live Job Progress Notification Banner (SSE) */}
       {isProcessing && (
@@ -367,46 +721,97 @@ export default function MotionSwapStudioPage() {
       )}
 
       {/* Synchronized Side-by-Side Comparison Stage */}
-      {generatedVideoUrl && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-5 h-5 text-emerald-400" />
-              <h2 className="font-bold text-zinc-100 text-base">
-                Rendered Result & Synchronized Dual Comparison
-              </h2>
-            </div>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className={`w-5 h-5 ${generatedVideoUrl ? "text-emerald-400" : "text-violet-400"}`} />
+            <h2 className="font-bold text-zinc-100 text-base">
+              {generatedVideoUrl
+                ? "Rendered Result & Synchronized Dual Comparison"
+                : "Driving Motion Video Stage (Input Preview)"}
+            </h2>
+            {generatedVideoUrl && (
+              <Badge variant="success" className="text-[10px]">
+                Character Swapped Successfully
+              </Badge>
+            )}
+          </div>
+          {generatedVideoUrl && (
             <div className="flex items-center gap-2">
               <a
                 href={generatedVideoUrl}
-                download="personamotion_retargeted.mp4"
+                download="personamotion_swapped.webm"
                 target="_blank"
                 rel="noreferrer"
               >
                 <Button variant="outline" size="sm" className="text-xs border-violet-700/60 text-violet-200 hover:bg-violet-950/40">
-                  <Download className="w-3.5 h-3.5 mr-1.5" /> Download MP4
+                  <Download className="w-3.5 h-3.5 mr-1.5" /> Download Swapped Video
                 </Button>
               </a>
               <Button variant="ghost" size="sm" className="text-xs text-zinc-400 hover:text-zinc-200">
                 <Share2 className="w-3.5 h-3.5 mr-1.5" /> Share
               </Button>
             </div>
-          </div>
-
-          {/* Interactive Responsive Split-Screen Dual Compare Component */}
-          <SplitScreenComparePlayer
-            originalVideoUrl={drivingVideoUrl}
-            generatedVideoUrl={generatedVideoUrl}
-            originalLabel={`Original Driving Motion (${(trimEnd - trimStart).toFixed(1)}s)`}
-            generatedLabel={`Swapped: ${activePersonaName} (Fal.ai / Wan-VACE)`}
-          />
+          )}
         </div>
-      )}
+
+        {/* Interactive Responsive Split-Screen Dual Compare Component */}
+        <SplitScreenComparePlayer
+          originalVideoUrl={drivingVideoUrl}
+          generatedVideoUrl={generatedVideoUrl}
+          originalLabel={`Source Driving Motion (${(trimEnd - trimStart).toFixed(1)}s)`}
+          generatedLabel={`Swapped: ${activePersonaName}`}
+        />
+      </div>
 
       {/* Studio Inputs: Dual Column Configuration */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left Column: Driving Video & Browser Trimmer */}
         <div className="space-y-6">
+          {/* Preset Driving Videos selector */}
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 shadow-xl space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Film className="w-4 h-4 text-violet-400" />
+                <h3 className="font-semibold text-zinc-100 text-xs tracking-wide uppercase">
+                  Sample Driving Motion Clips
+                </h3>
+              </div>
+              <Badge variant="outline" className="text-[10px]">
+                30fps Pose Data
+              </Badge>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {DRIVING_PRESETS.map((p) => {
+                const isSelected = drivingVideoUrl === p.url;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => {
+                      setDrivingVideoUrl(p.url);
+                      setTrimStart(0);
+                      setTrimEnd(8.5);
+                    }}
+                    className={`p-2.5 rounded-lg border text-left transition ${
+                      isSelected
+                        ? "bg-violet-950/60 border-violet-500 shadow"
+                        : "bg-zinc-950/70 border-zinc-800 hover:border-zinc-700"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-semibold text-zinc-200">{p.title}</span>
+                      {isSelected && <Check className="w-3 h-3 text-violet-400" />}
+                    </div>
+                    <p className="text-[10px] text-zinc-400 line-clamp-1">{p.desc}</p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Custom Video Uploader & Trimmer */}
           <VideoUploaderTrimmer
             onTrimmedVideoReady={handleTrimmedVideoReady}
             minDuration={3}
@@ -658,7 +1063,7 @@ export default function MotionSwapStudioPage() {
                 </Badge>
                 <h4 className="text-base font-bold text-zinc-100">{activePersonaName}</h4>
                 <p className="text-xs text-zinc-400">
-                  Target identity ready for pose transfer with Fal.ai (Wan-VACE / MimicMotion).
+                  Target identity ready for motion transfer with {FAL_MODELS.find(m => m.id === selectedModel)?.name || "Fal.ai"}.
                 </p>
               </div>
             </div>
@@ -671,9 +1076,9 @@ export default function MotionSwapStudioPage() {
                 </span>
               </div>
               <div className="bg-zinc-950 p-2.5 rounded border border-zinc-800">
-                <span className="text-zinc-500 block text-[10px]">AI Pipeline:</span>
+                <span className="text-zinc-500 block text-[10px]">Cloud GPU Cluster:</span>
                 <span className="text-emerald-400 font-semibold truncate block">
-                  Fal.ai / Wan-VACE
+                  {hasFalKey ? "Fal.ai Live" : "Preview Mode"}
                 </span>
               </div>
             </div>
