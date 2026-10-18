@@ -390,7 +390,48 @@ export async function synthesizeNeuralCharacterSwap(
         ctx.restore();
       }
 
-      // 4. Update progress
+      // 4. Apply Prompt-guided Stylization if customPrompt is present
+      if (options.customPrompt) {
+        const lowerPrompt = options.customPrompt.toLowerCase();
+        ctx.save();
+
+        if (lowerPrompt.includes("cyberpunk") || lowerPrompt.includes("neon")) {
+          // Cyberpunk / Neon Chromatic Grading
+          ctx.globalCompositeOperation = "color-dodge";
+          ctx.fillStyle = "rgba(0, 220, 255, 0.08)";
+          ctx.fillRect(0, 0, width, height);
+          ctx.globalCompositeOperation = "overlay";
+          ctx.fillStyle = "rgba(255, 0, 128, 0.06)";
+          ctx.fillRect(0, 0, width, height);
+        } else if (lowerPrompt.includes("anime") || lowerPrompt.includes("cel")) {
+          // Anime Vibrant Cel-Shading Tone
+          ctx.globalCompositeOperation = "soft-light";
+          ctx.fillStyle = "rgba(255, 235, 200, 0.12)";
+          ctx.fillRect(0, 0, width, height);
+        } else if (lowerPrompt.includes("noir") || lowerPrompt.includes("contrast")) {
+          // High-Contrast Film Noir Vignette
+          ctx.globalCompositeOperation = "multiply";
+          const grad = ctx.createRadialGradient(width / 2, height / 2, width * 0.25, width / 2, height / 2, width * 0.7);
+          grad.addColorStop(0, "rgba(255, 255, 255, 1)");
+          grad.addColorStop(1, "rgba(20, 20, 30, 0.85)");
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, width, height);
+        } else if (lowerPrompt.includes("warm") || lowerPrompt.includes("golden") || lowerPrompt.includes("retro")) {
+          // Golden Hour Warm Glow
+          ctx.globalCompositeOperation = "color";
+          ctx.fillStyle = "rgba(255, 175, 60, 0.1)";
+          ctx.fillRect(0, 0, width, height);
+        } else if (lowerPrompt.includes("cinematic") || lowerPrompt.includes("film")) {
+          // Filmic Contrast & Atmosphere
+          ctx.globalCompositeOperation = "soft-light";
+          ctx.fillStyle = "rgba(30, 50, 70, 0.1)";
+          ctx.fillRect(0, 0, width, height);
+        }
+
+        ctx.restore();
+      }
+
+      // 5. Update progress
       const elapsed = video.currentTime - clipStart;
       const progress = Math.min(94, Math.round(40 + (elapsed / clipDuration) * 54));
       onProgress?.({

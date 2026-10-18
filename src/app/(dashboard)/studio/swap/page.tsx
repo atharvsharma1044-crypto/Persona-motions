@@ -23,6 +23,7 @@ import {
   ExternalLink,
   AlertTriangle,
   Play,
+  Search,
 } from "lucide-react";
 import { VideoUploaderTrimmer } from "@/components/studio/VideoUploaderTrimmer";
 import { CharacterVaultSelector } from "@/components/studio/CharacterVaultSelector";
@@ -181,6 +182,47 @@ export default function MotionSwapStudioPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
   const [swapEngine, setSwapEngine] = useState<"neural" | "cloud">("neural");
+
+  // AI Prompt-to-Motion Search State
+  const [searchPrompt, setSearchPrompt] = useState<string>("");
+  const [isSearchingMotion, setIsSearchingMotion] = useState<boolean>(false);
+  const [matchedMotionClip, setMatchedMotionClip] = useState<any | null>(null);
+  const [searchFeedback, setSearchFeedback] = useState<string | null>(null);
+
+  const handleSearchMotionByPrompt = async (promptQuery?: string) => {
+    const query = (promptQuery !== undefined ? promptQuery : searchPrompt).trim();
+    if (!query) return;
+
+    try {
+      setIsSearchingMotion(true);
+      setSearchFeedback(`Searching matching motion footage & scene choreography for: "${query}"...`);
+
+      const res = await fetch("/api/motion/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: query }),
+      });
+
+      const data = await res.json();
+      if (data.matchedClip) {
+        setMatchedMotionClip(data.matchedClip);
+        setDrivingVideoUrl(data.matchedClip.videoUrl);
+        setTrimStart(0);
+        setTrimEnd(Math.min(10, data.matchedClip.duration || 8.5));
+        if (data.synthesizedPrompt) {
+          setCustomPrompt(data.synthesizedPrompt);
+        }
+        setSearchFeedback(
+          `Matched: "${data.matchedClip.title}" (${data.matchedClip.motionType}). Driving video and style prompt loaded!`
+        );
+      }
+    } catch (err) {
+      console.error("Motion search error:", err);
+      setSearchFeedback("Failed to search motion clips. Please try again.");
+    } finally {
+      setIsSearchingMotion(false);
+    }
+  };
 
   // Load key configuration on mount
   useEffect(() => {
@@ -768,6 +810,128 @@ export default function MotionSwapStudioPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left Column: Driving Video & Browser Trimmer */}
         <div className="space-y-6">
+          {/* AI Prompt-to-Motion Search & Scene Matcher */}
+          <div className="bg-gradient-to-br from-violet-950/30 via-zinc-900 to-zinc-900 border border-violet-800/50 rounded-xl p-5 shadow-xl space-y-3.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-violet-400" />
+                <h3 className="font-semibold text-zinc-100 text-xs tracking-wide uppercase">
+                  AI Prompt-to-Motion Search & Scene Matcher
+                </h3>
+              </div>
+              <Badge variant="purple" className="text-[10px]">
+                Smart Discovery
+              </Badge>
+            </div>
+
+            <p className="text-xs text-zinc-400">
+              Type any motion or scene action. Our search engine finds the matching driving video choreography and adapts the style just like the original video.
+            </p>
+
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={searchPrompt}
+                  onChange={(e) => setSearchPrompt(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSearchMotionByPrompt();
+                  }}
+                  placeholder="e.g. Street dancer doing spin, Martial arts kick, Samurai sword stance..."
+                  className="w-full bg-zinc-950 border border-zinc-700 rounded-lg pl-9 pr-3 py-2 text-xs text-zinc-100 focus:outline-none focus:border-violet-500 font-medium"
+                />
+              </div>
+              <Button
+                type="button"
+                variant="gradient"
+                size="sm"
+                onClick={() => handleSearchMotionByPrompt()}
+                disabled={isSearchingMotion || !searchPrompt.trim()}
+                className="text-xs shrink-0 font-semibold"
+              >
+                {isSearchingMotion ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Searching...
+                  </>
+                ) : (
+                  <>
+                    <Search className="w-3.5 h-3.5 mr-1.5" /> Search Motion
+                  </>
+                )}
+              </Button>
+            </div>
+
+            {/* Quick Action Prompt Chips */}
+            <div className="space-y-1.5">
+              <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold block">
+                Quick Action Concepts:
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { label: "🥋 Martial Arts Combat", query: "martial arts kick strike combat" },
+                  { label: "🕺 Street Dance", query: "urban street dance rhythm hip hop" },
+                  { label: "🏃 Cinematic Movement", query: "cinematic running locomotion movement" },
+                  { label: "🎙️ Keynote Speech", query: "professional keynote speech presentation talking head" },
+                  { label: "⚡ Dramatic Acting", query: "sci-fi dramatic actor expressions gestures" },
+                  { label: "🌧️ Cyberpunk Rain", query: "cyberpunk character walking rain moody neon" },
+                ].map((item) => (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={() => {
+                      setSearchPrompt(item.query);
+                      handleSearchMotionByPrompt(item.query);
+                    }}
+                    className="px-2 py-1 rounded-md bg-zinc-950 hover:bg-violet-950/70 border border-zinc-800 hover:border-violet-700/60 text-[11px] text-zinc-300 hover:text-violet-200 transition-colors"
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Feedback & Matched Clip Card */}
+            {searchFeedback && (
+              <div className="p-3 rounded-lg bg-zinc-950/80 border border-violet-700/40 text-xs text-zinc-300 space-y-2">
+                <p className="flex items-center gap-1.5 text-violet-300 font-medium">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  {searchFeedback}
+                </p>
+
+                {matchedMotionClip && (
+                  <div className="flex items-center gap-3 pt-1 border-t border-zinc-800/80">
+                    <img
+                      src={matchedMotionClip.thumbnailUrl}
+                      alt={matchedMotionClip.title}
+                      className="w-14 h-14 rounded-lg object-cover border border-violet-500/50"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-xs text-zinc-100 truncate">
+                          {matchedMotionClip.title}
+                        </span>
+                        <Badge variant="purple" className="text-[9px]">
+                          {matchedMotionClip.motionType}
+                        </Badge>
+                      </div>
+                      <p className="text-[10px] text-zinc-400 line-clamp-1 mt-0.5">
+                        {matchedMotionClip.description}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleStartRetargeting}
+                        className="mt-1 text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
+                      >
+                        <Zap className="w-3 h-3 fill-current" /> Synthesize Character Swap on this Scene →
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Preset Driving Videos selector */}
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 shadow-xl space-y-3">
             <div className="flex items-center justify-between">
