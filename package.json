@@ -16,6 +16,7 @@
     "@aws-sdk/s3-request-presigner": "^3.670.0",
     "@fal-ai/client": "^1.10.1",
     "@prisma/client": "^5.21.1",
+    "@types/three": "^0.186.0",
     "bullmq": "^5.21.2",
     "clsx": "^2.1.1",
     "ioredis": "^5.4.1",
@@ -25,6 +26,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tailwind-merge": "^2.5.4",
+    "three": "^0.186.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {
