@@ -90,6 +90,14 @@ export default function MotionSwapStudioPage() {
     analyzePromptCharacter("Spider-Man performing dynamic 3D acrobatics")
   );
 
+  // Character Live Search State
+  const [isSearchingCharacter, setIsSearchingCharacter] = useState<boolean>(false);
+
+  // Driving Video Playback & 3D Synchronization State
+  const [drivingVideoTime, setDrivingVideoTime] = useState<number>(0);
+  const [isDrivingVideoPlaying, setIsDrivingVideoPlaying] = useState<boolean>(false);
+  const [drivingVideoDuration, setDrivingVideoDuration] = useState<number>(8.5);
+
   // Developer API Modal State
   const [isApiModalOpen, setIsApiModalOpen] = useState<boolean>(false);
   const [apiTab, setApiTab] = useState<"motion_swap" | "motion_search" | "story">("motion_swap");
@@ -132,6 +140,47 @@ export default function MotionSwapStudioPage() {
   const [searchFeedback, setSearchFeedback] = useState<string | null>(null);
   const [matchedMotionClip, setMatchedMotionClip] = useState<any | null>(null);
 
+  // Live Online Character Identity Search (Wikipedia / Curated DB)
+  const fetchCharacterIdentity = async (query: string): Promise<CharacterIntelligenceResult> => {
+    const q = query.trim();
+    if (!q) return aiCharacter;
+
+    try {
+      setIsSearchingCharacter(true);
+      const res = await fetch("/api/character/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: q }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.character) {
+          setAiCharacter(data.character);
+          return data.character;
+        }
+      }
+    } catch (err) {
+      console.warn("Character search query error:", err);
+    } finally {
+      setIsSearchingCharacter(false);
+    }
+
+    const fallback = analyzePromptCharacter(q);
+    setAiCharacter(fallback);
+    return fallback;
+  };
+
+  // Debounced search when user types in director prompt
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (directorPrompt && directorPrompt.length > 3) {
+        fetchCharacterIdentity(directorPrompt);
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [directorPrompt]);
+
   // Search matching motion by prompt
   const handleSearchMotionByPrompt = async (promptQuery?: string) => {
     const query = (promptQuery !== undefined ? promptQuery : directorPrompt).trim();
@@ -170,23 +219,22 @@ export default function MotionSwapStudioPage() {
     const promptToUse = (overridePrompt || directorPrompt).trim();
     if (!promptToUse) return;
 
-    // 1. AI analyzes character identity & 3D kinematics automatically (no photo upload needed)
-    const detectedCharacter = analyzePromptCharacter(promptToUse);
-    setAiCharacter(detectedCharacter);
+    // 1. Search authentic character identity (Wikipedia + Curated DB)
+    setCurrentStage(`Searching authentic character identity for "${promptToUse}"...`);
+    const detectedCharacter = await fetchCharacterIdentity(promptToUse);
 
     // 2. Search matching driving video choreography
     await handleSearchMotionByPrompt(promptToUse);
 
-    // 3. Trigger 3D synthesis
+    // 3. Trigger 3D synthesis with full character synchronization
     await handleStartRetargeting(detectedCharacter, promptToUse);
   };
 
   // Manual character search from sidebar
-  const handleDirectCharacterSearch = (e: React.FormEvent) => {
+  const handleDirectCharacterSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!characterSearchQuery.trim()) return;
-    const detected = analyzePromptCharacter(characterSearchQuery);
-    setAiCharacter(detected);
+    await fetchCharacterIdentity(characterSearchQuery);
     setCharacterSearchQuery("");
   };
 
@@ -215,12 +263,16 @@ export default function MotionSwapStudioPage() {
 
       // Mode 1: Instant Neural Face & Character Swap (Hardware Accelerated)
       if (swapEngine === "neural") {
-        setCurrentStage(`Analyzing ${char.characterName} 3D facial landmarks and spatial pose...`);
+        setCurrentStage(`Synchronizing ${char.characterName} 3D geometry & wardrobe with video character...`);
         setProgressPercent(15);
 
         const swapResult = await synthesizeNeuralCharacterSwap({
           drivingVideoUrl,
           characterImageUrl: targetImage,
+          characterName: char.characterName,
+          accentColor: char.accentColor,
+          secondaryColor: char.secondaryColor,
+          characterArchetype: char.archetype,
           trimStartTime: trimStart,
           trimEndTime: trimEnd,
           motionFidelity,
@@ -403,9 +455,15 @@ export default function MotionSwapStudioPage() {
               AI 3D Video Director Prompt
             </h2>
           </div>
-          <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 font-mono flex items-center gap-1.5">
-            <CheckCircle2 className="w-3 h-3" /> Auto-Character Search Active • No Photo Needed
-          </span>
+          {isSearchingCharacter ? (
+            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-violet-950/80 border border-violet-500/50 text-violet-300 font-mono flex items-center gap-1.5 animate-pulse">
+              <RefreshCw className="w-3 h-3 animate-spin text-violet-400" /> Searching Wikipedia Character Intelligence...
+            </span>
+          ) : (
+            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 font-mono flex items-center gap-1.5">
+              <CheckCircle2 className="w-3 h-3" /> Auto-Character Search Active • No Photo Needed
+            </span>
+          )}
         </div>
 
         <p className="text-xs text-zinc-300">
@@ -522,6 +580,9 @@ export default function MotionSwapStudioPage() {
             secondaryColor={aiCharacter.secondaryColor}
             motionType={aiCharacter.suggested3DMotion}
             isGenerating={isProcessing}
+            drivingVideoTime={drivingVideoTime}
+            isDrivingVideoPlaying={isDrivingVideoPlaying}
+            drivingVideoDuration={drivingVideoDuration}
             onVideoCaptured={(blob, url) => {
               setGeneratedVideoUrl(url);
               setActiveStageView("split_compare");
@@ -615,6 +676,11 @@ export default function MotionSwapStudioPage() {
             onTrimmedVideoReady={handleTrimmedVideoReady}
             minDuration={3}
             maxDuration={15}
+            onPlaybackSync={(time, isPlaying, duration) => {
+              setDrivingVideoTime(time);
+              setIsDrivingVideoPlaying(isPlaying);
+              setDrivingVideoDuration(duration);
+            }}
           />
         </div>
 

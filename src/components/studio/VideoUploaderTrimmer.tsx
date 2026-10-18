@@ -21,12 +21,14 @@ interface VideoUploaderTrimmerProps {
   onTrimmedVideoReady: (videoUrl: string, trimStart: number, trimEnd: number) => void;
   minDuration?: number; // default 3s
   maxDuration?: number; // default 15s
+  onPlaybackSync?: (currentTime: number, isPlaying: boolean, duration: number) => void;
 }
 
 export function VideoUploaderTrimmer({
   onTrimmedVideoReady,
   minDuration = 3,
   maxDuration = 15,
+  onPlaybackSync,
 }: VideoUploaderTrimmerProps) {
   const [file, setFile] = useState<File | null>(null);
   const [localVideoUrl, setLocalVideoUrl] = useState<string | null>(null);
@@ -79,6 +81,7 @@ export function VideoUploaderTrimmer({
     const initialEnd = Math.min(dur, Math.max(minDuration, Math.min(dur, 10)));
     setTrimEnd(initialEnd);
     setCurrentTime(0);
+    onPlaybackSync?.(0, false, dur);
   };
 
   // Loop trimmed section strictly during preview playback
@@ -86,6 +89,7 @@ export function VideoUploaderTrimmer({
     if (!videoRef.current) return;
     const curr = videoRef.current.currentTime;
     setCurrentTime(curr);
+    onPlaybackSync?.(curr, isPlaying, duration);
 
     if (curr >= trimEnd) {
       videoRef.current.currentTime = trimStart;
@@ -98,12 +102,14 @@ export function VideoUploaderTrimmer({
     if (isPlaying) {
       videoRef.current.pause();
       setIsPlaying(false);
+      onPlaybackSync?.(videoRef.current.currentTime, false, duration);
     } else {
       if (videoRef.current.currentTime < trimStart || videoRef.current.currentTime >= trimEnd) {
         videoRef.current.currentTime = trimStart;
       }
       videoRef.current.play();
       setIsPlaying(true);
+      onPlaybackSync?.(videoRef.current.currentTime, true, duration);
     }
   };
 

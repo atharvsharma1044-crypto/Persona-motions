@@ -1,18 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { analyzePromptCharacter } from "@/lib/character_intelligence";
+import { searchCharacterOnline } from "@/lib/character_intelligence";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const prompt = (body.prompt as string) || "";
+    const prompt = (body.prompt as string) || (body.query as string) || "";
 
     if (!prompt.trim()) {
       return NextResponse.json({ error: "No prompt provided" }, { status: 400 });
     }
 
-    const result = analyzePromptCharacter(prompt);
+    const result = await searchCharacterOnline(prompt);
 
     return NextResponse.json({
       success: true,
