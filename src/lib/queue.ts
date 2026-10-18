@@ -79,14 +79,21 @@ export interface EnqueueJobPayload {
 export async function enqueueGpuJob(payload: EnqueueJobPayload) {
   try {
     const queue = getGpuJobQueue();
-    const job = await queue.add(payload.type, payload, {
+    // Add timeout race so API requests never hang if Redis is offline or starting
+    const queuePromise = queue.add(payload.type, payload, {
       jobId: payload.jobId,
       priority: payload.type === "MOTION_SWAP" ? 1 : 2,
     });
+    const timeoutPromise = new Promise<{ id: string }>((_, reject) =>
+      setTimeout(() => reject(new Error("Redis queue connection timeout")), 1200)
+    );
+
+    const job = await Promise.race([queuePromise, timeoutPromise]);
     return { success: true, queueJobId: job.id };
   } catch (error) {
-    console.error("[Queue Error] Failed to enqueue GPU job:", error);
+    console.warn("[Queue Warning - Using direct serverless executor]:", (error as Error).message);
     // Return gracefully to allow direct serverless invocation fallback
     return { success: false, error: (error as Error).message };
   }
 }
+

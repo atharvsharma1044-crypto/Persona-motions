@@ -45,6 +45,8 @@ export interface ShotItem {
   characterState?: string | null;
   outputVideoUrl?: string | null;
   status: ShotStatus;
+  progressPercent?: number;
+  currentStage?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }

@@ -11,15 +11,21 @@ import {
   CheckCircle2,
   AlertCircle,
   SlidersHorizontal,
+  Trash2,
+  Copy,
+  Cpu,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { ShotItem, ShotStatus } from "@/types";
 
 interface StoryboardShotCardProps {
   shot: ShotItem;
   onUpdateShot: (updatedShot: ShotItem) => void;
   onRenderShot: (shotId: string) => void;
+  onDeleteShot?: (shotId: string) => void;
+  onDuplicateShot?: (shotId: string) => void;
   isRendering?: boolean;
 }
 
@@ -27,6 +33,8 @@ export function StoryboardShotCard({
   shot,
   onUpdateShot,
   onRenderShot,
+  onDeleteShot,
+  onDuplicateShot,
   isRendering = false,
 }: StoryboardShotCardProps) {
   const [isEditing, setIsEditing] = useState(false);
@@ -57,7 +65,7 @@ export function StoryboardShotCard({
       case "GENERATING":
         return (
           <Badge variant="purple" className="text-[10px] animate-pulse">
-            <RefreshCw className="w-3 h-3 mr-1 animate-spin text-violet-400" /> Synthesizing
+            <RefreshCw className="w-3 h-3 mr-1 animate-spin text-violet-400" /> Synthesizing ({shot.progressPercent || 15}%)
           </Badge>
         );
       case "FAILED":
@@ -87,7 +95,19 @@ export function StoryboardShotCard({
             Shot {shot.sequenceOrder}
           </span>
         </div>
-        {getStatusBadge(shot.status)}
+        <div className="flex items-center gap-1.5">
+          {getStatusBadge(shot.status)}
+          {onDeleteShot && (
+            <button
+              type="button"
+              onClick={() => onDeleteShot(shot.id)}
+              className="p-1 rounded text-zinc-500 hover:text-rose-400 hover:bg-zinc-800/60 transition"
+              title="Delete Shot"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Video Preview or Placeholder Stage */}
@@ -99,6 +119,20 @@ export function StoryboardShotCard({
             playsInline
             className="w-full h-full object-cover"
           />
+        ) : shot.status === "GENERATING" ? (
+          <div className="w-full h-full flex flex-col items-center justify-center p-4 bg-zinc-950/90 text-center space-y-2">
+            <RefreshCw className="w-7 h-7 text-violet-400 animate-spin" />
+            <div className="w-3/4 max-w-xs space-y-1.5">
+              <div className="flex justify-between text-[11px] font-mono text-zinc-300">
+                <span>GPU Synthesis</span>
+                <span className="text-violet-400 font-bold">{shot.progressPercent || 15}%</span>
+              </div>
+              <Progress value={shot.progressPercent || 15} />
+            </div>
+            <p className="text-[11px] text-zinc-400 font-mono line-clamp-2 px-2">
+              {shot.currentStage || "Wan 2.1 video diffusion sampling in progress..."}
+            </p>
+          </div>
         ) : (
           <div className="flex flex-col items-center justify-center text-zinc-500 p-4 text-center">
             <Film className="w-8 h-8 mb-2 text-zinc-700" />
@@ -193,14 +227,27 @@ export function StoryboardShotCard({
 
         {/* Action Controls */}
         <div className="flex items-center justify-between pt-2 border-t border-zinc-800/80">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setIsEditing(!isEditing)}
-            className="text-xs text-zinc-400 hover:text-zinc-200"
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5 mr-1" /> Edit
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsEditing(!isEditing)}
+              className="text-xs text-zinc-400 hover:text-zinc-200 px-2"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5 mr-1" /> Edit
+            </Button>
+            {onDuplicateShot && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onDuplicateShot(shot.id)}
+                className="text-xs text-zinc-400 hover:text-zinc-200 px-2"
+                title="Duplicate Shot"
+              >
+                <Copy className="w-3.5 h-3.5" />
+              </Button>
+            )}
+          </div>
 
           <Button
             variant="default"

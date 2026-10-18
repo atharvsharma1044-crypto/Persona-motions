@@ -191,8 +191,14 @@ export function VideoUploaderTrimmer({
       setUploadedUrl(publicUrl);
       onTrimmedVideoReady(publicUrl, trimStart, trimEnd);
     } catch (err) {
-      console.error(err);
-      setError((err as Error).message);
+      console.warn("[Video Upload Warning]:", err);
+      if (localVideoUrl) {
+        setUploadedUrl(localVideoUrl);
+        onTrimmedVideoReady(localVideoUrl, trimStart, trimEnd);
+        setError("Note: Cloud storage unconfigured; using local video preview.");
+      } else {
+        setError((err as Error).message);
+      }
     } finally {
       setIsUploading(false);
     }

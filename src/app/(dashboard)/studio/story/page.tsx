@@ -13,6 +13,8 @@ import {
   Download,
   Clock,
   Video,
+  Plus,
+  BookOpen,
 } from "lucide-react";
 import { CharacterVaultSelector } from "@/components/studio/CharacterVaultSelector";
 import { StoryboardShotCard } from "@/components/studio/StoryboardShotCard";
@@ -98,6 +100,21 @@ const INITIAL_SHOTS: ShotItem[] = [
   },
 ];
 
+const STORY_PRESETS = [
+  {
+    label: "Cyberpunk Infiltration",
+    text: "Elena Vance infiltrates the Arasaka high-orbit data spire. Dodging laser tripwires and airborne search drones, she hacks the central mainframe and parachutes into the neon metropolis below.",
+  },
+  {
+    label: "Blade Runner Detective",
+    text: "Elena Vance navigates a rain-drenched dark alleyway in futuristic Los Angeles. Inspecting a broken synthetic neural implant under flickering neon signage, she notices an approaching shadowed figure.",
+  },
+  {
+    label: "Anime Fantasy Climax",
+    text: "Elena Vance summons ancient luminescent energy atop a crumbling floating citadel. Surrounded by tempestuous celestial storm clouds, she unleashes her power toward the rift to restore balance.",
+  },
+];
+
 export default function StoryToVideoPage() {
   const [characters, setCharacters] = useState<CharacterModel[]>(INITIAL_CHARACTERS);
   const [selectedCharacter, setSelectedCharacter] = useState<CharacterModel>(INITIAL_CHARACTERS[0]);
@@ -163,10 +180,10 @@ export default function StoryToVideoPage() {
     }
   };
 
-  // Render individual shot
+  // Render individual shot with live progress
   const handleRenderShot = async (shotId: string) => {
     setShots((prev) =>
-      prev.map((s) => (s.id === shotId ? { ...s, status: "GENERATING" } : s))
+      prev.map((s) => (s.id === shotId ? { ...s, status: "GENERATING", progressPercent: 10, currentStage: "Submitting to GPU cluster..." } : s))
     );
 
     try {
@@ -188,8 +205,28 @@ export default function StoryToVideoPage() {
         }),
       });
 
+      if (!res.ok) {
+        throw new Error("Failed to initiate shot generation job");
+      }
+
       const data = await res.json();
       const eventSource = new EventSource(`/api/jobs/${data.jobId}/stream`);
+
+      eventSource.addEventListener("progress", (evt) => {
+        const payload = JSON.parse(evt.data);
+        setShots((prev) =>
+          prev.map((s) =>
+            s.id === shotId
+              ? {
+                  ...s,
+                  status: "GENERATING",
+                  progressPercent: payload.progressPercent || 15,
+                  currentStage: payload.currentStage || "Synthesizing shot diffusion...",
+                }
+              : s
+          )
+        );
+      });
 
       eventSource.addEventListener("done", (evt) => {
         const payload = JSON.parse(evt.data);
@@ -198,33 +235,122 @@ export default function StoryToVideoPage() {
             s.id === shotId
               ? {
                   ...s,
-                  status: "COMPLETED",
+                  status: payload.status === "FAILED" ? "FAILED" : "COMPLETED",
                   outputVideoUrl:
                     payload.resultUrl ||
                     "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+                  progressPercent: 100,
+                  currentStage: payload.currentStage || "Completed",
                 }
               : s
           )
         );
         eventSource.close();
       });
+
+      eventSource.onerror = () => {
+        eventSource.close();
+      };
     } catch (err) {
       console.error(err);
       setShots((prev) =>
-        prev.map((s) => (s.id === shotId ? { ...s, status: "FAILED" } : s))
+        prev.map((s) => (s.id === shotId ? { ...s, status: "FAILED", currentStage: (err as Error).message } : s))
       );
     }
   };
 
+  // Batch render all pending shots sequentially
+  const handleBatchRenderAll = async () => {
+    const pendingShots = shots.filter((s) => s.status !== "COMPLETED");
+    if (pendingShots.length === 0) return;
+
+    setIsBatchRendering(true);
+    for (const shot of pendingShots) {
+      await handleRenderShot(shot.id);
+    }
+    setIsBatchRendering(false);
+  };
+
+  // Add new shot card
+  const handleAddShot = () => {
+    const newSeq = shots.length + 1;
+    const newShot: ShotItem = {
+      id: `shot-${Date.now()}`,
+      projectId: "proj-1",
+      sequenceOrder: newSeq,
+      prompt: `Cinematic shot #${newSeq} of ${selectedCharacter.name} advancing through the narrative. Dramatic rim lighting, 35mm anamorphic.`,
+      cameraMovement: "Tracking Shot Following Subject",
+      durationSeconds: 4.0,
+      characterState: "Dramatic focus and action",
+      status: "PENDING",
+    };
+    setShots([...shots, newShot]);
+  };
+
+  // Delete shot card
+  const handleDeleteShot = (shotId: string) => {
+    const filtered = shots.filter((s) => s.id !== shotId);
+    const reordered = filtered.map((s, idx) => ({ ...s, sequenceOrder: idx + 1 }));
+    setShots(reordered);
+  };
+
+  // Duplicate shot card
+  const handleDuplicateShot = (shotId: string) => {
+    const target = shots.find((s) => s.id === shotId);
+    if (!target) return;
+    const duplicated: ShotItem = {
+      ...target,
+      id: `shot-${Date.now()}`,
+      sequenceOrder: shots.length + 1,
+      status: "PENDING",
+      outputVideoUrl: null,
+    };
+    setShots([...shots, duplicated]);
+  };
+
   // Cloud Auto-Stitch worker
   const handleAutoStitch = async () => {
-    setIsStitching(true);
-    setTimeout(() => {
-      setStitchedVideoUrl(
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
-      );
+    try {
+      setIsStitching(true);
+      const completedUrls = shots
+        .filter((s) => s.status === "COMPLETED" && s.outputVideoUrl)
+        .map((s) => s.outputVideoUrl!);
+
+      const res = await fetch("/api/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "STORY_STITCH",
+          shotVideoUrls: completedUrls,
+          options: {
+            audioTrackUrl: "https://actions.google.com/sounds/v1/science_fiction/ambient_hum.ogg",
+          },
+        }),
+      });
+
+      if (!res.ok) throw new Error("Failed to dispatch stitch worker");
+      const data = await res.json();
+
+      const eventSource = new EventSource(`/api/jobs/${data.jobId}/stream`);
+      eventSource.addEventListener("done", (evt) => {
+        const payload = JSON.parse(evt.data);
+        setStitchedVideoUrl(
+          payload.resultUrl ||
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
+        );
+        setIsStitching(false);
+        eventSource.close();
+      });
+
+      eventSource.onerror = () => {
+        setIsStitching(false);
+        eventSource.close();
+      };
+    } catch (err) {
+      console.error(err);
       setIsStitching(false);
-    }, 3000);
+      alert("Error stitching sequence: " + (err as Error).message);
+    }
   };
 
   const totalStoryDuration = shots.reduce((sum, s) => sum + s.durationSeconds, 0);
@@ -252,23 +378,39 @@ export default function StoryToVideoPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Button
+            variant="outline"
+            size="lg"
+            onClick={handleBatchRenderAll}
+            disabled={isBatchRendering || completedShotsCount === shots.length}
+            className="text-xs border-violet-800/60 hover:bg-violet-950/40 text-violet-300"
+          >
+            {isBatchRendering ? (
+              <>
+                <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Batch Rendering...
+              </>
+            ) : (
+              <>
+                <Play className="w-4 h-4 mr-2 fill-current" /> Batch Render Pending ({shots.length - completedShotsCount})
+              </>
+            )}
+          </Button>
+
           <Button
             variant="gradient"
             size="lg"
             onClick={handleAutoStitch}
             disabled={isStitching || completedShotsCount === 0}
-            className="w-full md:w-auto font-semibold shadow-xl shadow-violet-600/25"
+            className="font-semibold shadow-xl shadow-violet-600/25"
           >
             {isStitching ? (
               <>
-                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                Auto-Stitching Shots...
+                <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Auto-Stitching...
               </>
             ) : (
               <>
-                <Video className="w-4 h-4 mr-2" />
-                Cloud Auto-Stitch Sequence ({completedShotsCount}/{shots.length})
+                <Video className="w-4 h-4 mr-2" /> Auto-Stitch ({completedShotsCount}/{shots.length})
               </>
             )}
           </Button>
@@ -299,9 +441,26 @@ export default function StoryToVideoPage() {
 
         <div className="space-y-3">
           <div>
-            <label className="text-xs font-medium text-zinc-300 block mb-1">
-              Story Script / Narrative Arc
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-medium text-zinc-300 block">
+                Story Script / Narrative Arc
+              </label>
+              {/* Quick Story Presets */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-zinc-500">Presets:</span>
+                {STORY_PRESETS.map((p) => (
+                  <button
+                    key={p.label}
+                    type="button"
+                    onClick={() => setStoryPrompt(p.text)}
+                    className="text-[10px] bg-zinc-950 hover:bg-violet-950/60 border border-zinc-800 hover:border-violet-700/60 px-2 py-0.5 rounded text-zinc-300 hover:text-violet-200 transition"
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <textarea
               value={storyPrompt}
               onChange={(e) => setStoryPrompt(e.target.value)}
@@ -383,7 +542,7 @@ export default function StoryToVideoPage() {
               target="_blank"
               rel="noreferrer"
             >
-              <Button variant="outline" size="sm" className="text-xs">
+              <Button variant="outline" size="sm" className="text-xs border-emerald-700/60 text-emerald-300">
                 <Download className="w-3.5 h-3.5 mr-1.5" /> Download Full Video
               </Button>
             </a>
@@ -409,9 +568,20 @@ export default function StoryToVideoPage() {
               SHOT TIMELINE & STORYBOARD ({shots.length} SHOTS • {totalStoryDuration.toFixed(1)}s TOTAL)
             </h3>
           </div>
-          <span className="text-xs font-mono text-zinc-400">
-            Rendered: {completedShotsCount} of {shots.length}
-          </span>
+
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleAddShot}
+              className="text-xs border-zinc-700 hover:border-violet-500"
+            >
+              <Plus className="w-3.5 h-3.5 mr-1" /> Add Shot
+            </Button>
+            <span className="text-xs font-mono text-zinc-400">
+              Rendered: {completedShotsCount} of {shots.length}
+            </span>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -423,6 +593,8 @@ export default function StoryToVideoPage() {
                 setShots((prev) => prev.map((s) => (s.id === updated.id ? updated : s)))
               }
               onRenderShot={handleRenderShot}
+              onDeleteShot={handleDeleteShot}
+              onDuplicateShot={handleDuplicateShot}
             />
           ))}
         </div>

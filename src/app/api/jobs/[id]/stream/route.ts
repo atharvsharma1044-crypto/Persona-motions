@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getJobFromStore } from "@/lib/job_store";
+import { pollFalJobStatus } from "@/lib/serverless_gpu";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +15,7 @@ export async function GET(
   const writer = responseStream.writable.getWriter();
   const encoder = new TextEncoder();
 
-  // Helper to send SSE event formatted packet
+  // Helper to send formatted SSE packet
   const sendEvent = async (event: string, data: Record<string, unknown>) => {
     const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
     await writer.write(encoder.encode(payload));
@@ -22,83 +24,101 @@ export async function GET(
   (async () => {
     let isTerminated = false;
     let pollCount = 0;
+    const maxPolls = 200; // ~5-6 minutes max lifetime for SSE connection
 
-    // Monitor for client disconnect
+    // Monitor for client disconnect / navigation away
     req.signal.addEventListener("abort", () => {
       isTerminated = true;
       writer.close().catch(() => {});
     });
 
     try {
-      while (!isTerminated && pollCount < 120) {
+      while (!isTerminated && pollCount < maxPolls) {
         pollCount++;
 
-        let job = null;
-        try {
-          job = await prisma.generationJob.findUnique({
-            where: { id: jobId },
-          });
-        } catch {
-          // In case DB is offline or mock job
+        // 1. If job has Fal.ai request_id, refresh status directly from Fal API
+        const inMemJob = getJobFromStore(jobId);
+        if (inMemJob && inMemJob.falRequestId && inMemJob.status !== "COMPLETED" && inMemJob.status !== "FAILED") {
+          try {
+            await pollFalJobStatus(jobId);
+          } catch (pollErr) {
+            console.warn(`[SSE Fal Poll Warning]:`, pollErr);
+          }
         }
 
-        if (job) {
+        // 2. Read latest snapshot from in-memory store
+        let currentJob = getJobFromStore(jobId);
+
+        // 3. If not in memory store, try Prisma DB
+        if (!currentJob) {
+          try {
+            const dbJob = await prisma.generationJob.findUnique({
+              where: { id: jobId },
+            });
+            if (dbJob) {
+              currentJob = {
+                id: dbJob.id,
+                userId: dbJob.userId,
+                type: dbJob.type,
+                status: dbJob.status,
+                progressPercent: dbJob.progressPercent,
+                currentStage: dbJob.currentStage || undefined,
+                resultUrl: dbJob.resultUrl || undefined,
+                error: dbJob.error || undefined,
+                createdAt: dbJob.createdAt.toISOString(),
+                updatedAt: dbJob.updatedAt.toISOString(),
+              };
+            }
+          } catch {
+            // DB offline or detached execution
+          }
+        }
+
+        if (currentJob) {
+          // Send live SSE progress update
           await sendEvent("progress", {
-            jobId: job.id,
-            status: job.status,
-            progressPercent: job.progressPercent,
-            currentStage: job.currentStage,
-            resultUrl: job.resultUrl,
-            error: job.error,
+            jobId: currentJob.id,
+            status: currentJob.status,
+            progressPercent: currentJob.progressPercent,
+            currentStage: currentJob.currentStage || "Processing neural diffusion layers...",
+            resultUrl: currentJob.resultUrl,
+            error: currentJob.error,
           });
 
-          if (job.status === "COMPLETED" || job.status === "FAILED") {
+          // Check for terminal states
+          if (currentJob.status === "COMPLETED") {
             await sendEvent("done", {
-              jobId: job.id,
-              status: job.status,
-              resultUrl: job.resultUrl,
-              error: job.error,
+              jobId: currentJob.id,
+              status: "COMPLETED",
+              progressPercent: 100,
+              resultUrl: currentJob.resultUrl,
+              currentStage: currentJob.currentStage || "Retargeting pipeline completed successfully!",
+            });
+            break;
+          }
+
+          if (currentJob.status === "FAILED") {
+            await sendEvent("done", {
+              jobId: currentJob.id,
+              status: "FAILED",
+              progressPercent: currentJob.progressPercent,
+              error: currentJob.error || "Inference pipeline encountered an unrecoverable error.",
+              currentStage: currentJob.currentStage || "Failed",
             });
             break;
           }
         } else {
-          // Synthetic progress simulation for zero-config local testing
-          const simulatedPercent = Math.min(100, pollCount * 12);
-          const stages = [
-            "Initializing GPU runner environment...",
-            "Segmenting subject mask with SAM 2...",
-            "Extracting skeletal dynamics with DWPose...",
-            "Diffusion retargeting onto character...",
-            "RIFE interpolation and Real-ESRGAN upscaling...",
-            "Uploading high-definition MP4 result...",
-          ];
-          const currentStage =
-            stages[Math.min(stages.length - 1, Math.floor((simulatedPercent / 100) * stages.length))];
-          const isDone = simulatedPercent >= 100;
-
+          // Job not found or initial registration window
           await sendEvent("progress", {
             jobId,
-            status: isDone ? "COMPLETED" : "PROCESSING",
-            progressPercent: simulatedPercent,
-            currentStage,
-            resultUrl: isDone
-              ? "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"
-              : null,
+            status: "QUEUED",
+            progressPercent: Math.min(15, pollCount * 3),
+            currentStage: "Locating job in orchestration queue...",
           });
-
-          if (isDone) {
-            await sendEvent("done", {
-              jobId,
-              status: "COMPLETED",
-              resultUrl:
-                "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
-            });
-            break;
-          }
         }
 
-        // Poll interval: 2 seconds
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        // Poll interval: 1500ms
+        await new Promise((resolve) => setTimeout(resolve, 1500));
       }
     } catch (err) {
       console.warn(`[SSE Stream Aborted] Job ${jobId}:`, err);
@@ -116,7 +136,7 @@ export async function GET(
       "Content-Type": "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
-      "X-Accel-Buffering": "no", // Nginx direct flush
+      "X-Accel-Buffering": "no", // Nginx / Vercel direct flush
     },
   });
 }
