@@ -299,7 +299,7 @@ export default function MotionSwapStudioPage() {
       setProgressPercent(5);
       setGeneratedVideoUrl(null);
 
-      const targetImage = char.avatarUrl;
+      const targetImage = customCharacterImageUrl || char.avatarUrl;
 
       // Mode 1: Instant Neural Face & Character Swap (Hardware Accelerated)
       if (swapEngine === "neural") {
@@ -615,7 +615,7 @@ export default function MotionSwapStudioPage() {
         {activeStageView === "3d_spatial" ? (
           <ThreeDCharacterMotionViewport
             characterName={aiCharacter.characterName}
-            avatarUrl={aiCharacter.avatarUrl}
+            avatarUrl={customCharacterImageUrl || aiCharacter.avatarUrl}
             accentColor={aiCharacter.accentColor}
             secondaryColor={aiCharacter.secondaryColor}
             motionType={aiCharacter.suggested3DMotion}
@@ -742,7 +742,7 @@ export default function MotionSwapStudioPage() {
 
             <div className="flex items-start gap-4">
               <img
-                src={aiCharacter.avatarUrl}
+                src={customCharacterImageUrl || aiCharacter.avatarUrl}
                 alt={aiCharacter.characterName}
                 className="w-24 h-24 rounded-2xl object-cover border-2 border-violet-500/80 shadow-xl bg-zinc-950 shrink-0"
               />

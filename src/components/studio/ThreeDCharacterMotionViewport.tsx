@@ -219,19 +219,42 @@ export function ThreeDCharacterMotionViewport({
         texture.generateMipmaps = true;
         texture.minFilter = THREE.LinearMipmapLinearFilter;
 
-        const faceGeom = new THREE.PlaneGeometry(0.68, 0.82, 16, 16);
-        const faceMat = new THREE.MeshStandardMaterial({
-          map: texture,
-          transparent: true,
-          side: THREE.FrontSide,
-          roughness: 0.4,
-          metalness: 0.2,
-        });
+        const img = texture.image as HTMLImageElement | undefined;
+        const imgW = img?.naturalWidth || img?.width || 512;
+        const imgH = img?.naturalHeight || img?.height || 512;
+        const aspect = imgW / imgH;
 
-        const facePlane = new THREE.Mesh(faceGeom, faceMat);
-        facePlane.position.set(0, 0, 0.24);
-        facePlane.castShadow = true;
-        headGroup.add(facePlane);
+        if (aspect < 0.75) {
+          // Full-body character standing figure
+          const fullH = 2.4;
+          const fullW = fullH * aspect;
+          const charGeom = new THREE.PlaneGeometry(fullW, fullH, 16, 16);
+          const charMat = new THREE.MeshStandardMaterial({
+            map: texture,
+            transparent: true,
+            side: THREE.DoubleSide,
+            roughness: 0.35,
+            metalness: 0.1,
+          });
+          const charPlane = new THREE.Mesh(charGeom, charMat);
+          charPlane.position.set(0, 0.1, 0.32);
+          charPlane.castShadow = true;
+          characterRoot.add(charPlane);
+        } else {
+          const faceGeom = new THREE.PlaneGeometry(0.68, 0.82, 16, 16);
+          const faceMat = new THREE.MeshStandardMaterial({
+            map: texture,
+            transparent: true,
+            side: THREE.FrontSide,
+            roughness: 0.4,
+            metalness: 0.2,
+          });
+
+          const facePlane = new THREE.Mesh(faceGeom, faceMat);
+          facePlane.position.set(0, 0, 0.24);
+          facePlane.castShadow = true;
+          headGroup.add(facePlane);
+        }
       },
       undefined,
       () => {
