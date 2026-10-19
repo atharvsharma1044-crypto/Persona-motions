@@ -15,6 +15,7 @@ import {
   ChevronRight,
   Repeat,
   Gauge,
+  Download,
 } from "lucide-react";
 import { formatTimecode } from "@/lib/utils";
 
@@ -211,6 +212,20 @@ export function SplitScreenComparePlayer({
             <Columns className="w-3.5 h-3.5" />
             Dual
           </button>
+
+          {generatedVideoUrl && (
+            <a
+              href={generatedVideoUrl}
+              download="persona_v2v_motion.mp4"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1 text-xs rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition flex items-center gap-1.5 shadow-md shadow-emerald-950/40"
+              title="Download generated video"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Download MP4
+            </a>
+          )}
         </div>
       </div>
 

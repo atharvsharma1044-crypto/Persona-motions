@@ -25,6 +25,9 @@ import {
   Eye,
   Palette,
   Check,
+  Upload,
+  Image as ImageIcon,
+  Ratio,
 } from "lucide-react";
 import { VideoUploaderTrimmer } from "@/components/studio/VideoUploaderTrimmer";
 import { SplitScreenComparePlayer } from "@/components/studio/SplitScreenComparePlayer";
@@ -126,6 +129,12 @@ export default function MotionSwapStudioPage() {
   const [enableColorHarmonization, setEnableColorHarmonization] = useState<boolean>(true);
   const [enableHeadRotation, setEnableHeadRotation] = useState<boolean>(true);
 
+  // V2V Aspect Ratio & Generation Model Options
+  const [aspectRatio, setAspectRatio] = useState<"16:9" | "9:16" | "1:1">("16:9");
+  const [v2vModel, setV2vModel] = useState<"mimic-motion" | "wan-v2v" | "champ" | "kling-motion">("mimic-motion");
+  const [customCharacterImageUrl, setCustomCharacterImageUrl] = useState<string | null>(null);
+  const [isUploadingCharacterImage, setIsUploadingCharacterImage] = useState<boolean>(false);
+
   // Job Orchestration & SSE Streaming State
   const [jobId, setJobId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
@@ -134,6 +143,37 @@ export default function MotionSwapStudioPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
   const [swapEngine, setSwapEngine] = useState<"neural" | "cloud">("neural");
+
+  // Character Image Upload Handler
+  const handleCharacterImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsUploadingCharacterImage(true);
+      const filename = `char_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
+      const res = await fetch(`/api/upload/direct?filename=${encodeURIComponent(filename)}&folder=characters`, {
+        method: "PUT",
+        headers: { "Content-Type": file.type || "image/png" },
+        body: file,
+      });
+
+      const data = await res.json();
+      if (data.publicUrl) {
+        setCustomCharacterImageUrl(data.publicUrl);
+        setAiCharacter((prev) => ({
+          ...prev,
+          avatarUrl: data.publicUrl,
+          characterName: file.name.split(".")[0] || "Custom Character",
+          summary: "Custom character reference image uploaded for V2V motion transfer.",
+        }));
+      }
+    } catch (uploadErr) {
+      console.warn("Character image upload error:", uploadErr);
+    } finally {
+      setIsUploadingCharacterImage(false);
+    }
+  };
 
   // Motion Search State
   const [isSearchingMotion, setIsSearchingMotion] = useState<boolean>(false);
@@ -729,19 +769,108 @@ export default function MotionSwapStudioPage() {
               </div>
             </div>
 
-            {/* Change Character Directly by Name Input */}
-            <form onSubmit={handleDirectCharacterSearch} className="flex gap-2 pt-2 border-t border-zinc-800">
-              <input
-                type="text"
-                value={characterSearchQuery}
-                onChange={(e) => setCharacterSearchQuery(e.target.value)}
-                placeholder="Type character name to switch (e.g. Iron Man, Batman, Goku, Samurai)..."
-                className="flex-1 bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-violet-500"
-              />
-              <Button type="submit" variant="gradient" size="sm" className="text-xs shrink-0 font-semibold">
-                <Search className="w-3.5 h-3.5 mr-1" /> Switch
-              </Button>
-            </form>
+            {/* Character Selection: Text Prompt Search OR Direct Image Reference Upload */}
+            <div className="space-y-3 pt-2 border-t border-zinc-800">
+              <form onSubmit={handleDirectCharacterSearch} className="flex gap-2">
+                <input
+                  type="text"
+                  value={characterSearchQuery}
+                  onChange={(e) => setCharacterSearchQuery(e.target.value)}
+                  placeholder="Search character name (e.g. Iron Man, Batman, Goku, Samurai)..."
+                  className="flex-1 bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-violet-500"
+                />
+                <Button type="submit" variant="gradient" size="sm" className="text-xs shrink-0 font-semibold">
+                  <Search className="w-3.5 h-3.5 mr-1" /> Search
+                </Button>
+              </form>
+
+              {/* Direct Character Reference Image Upload */}
+              <div className="flex items-center justify-between p-2.5 rounded-lg bg-zinc-950/80 border border-zinc-800">
+                <div className="flex items-center gap-2">
+                  <ImageIcon className="w-4 h-4 text-violet-400" />
+                  <span className="text-xs text-zinc-300">Or Upload Reference Image:</span>
+                </div>
+                <label className="cursor-pointer">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleCharacterImageUpload}
+                    className="hidden"
+                  />
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold bg-violet-950/80 hover:bg-violet-900 border border-violet-700/60 text-violet-200 transition">
+                    <Upload className="w-3.5 h-3.5" />
+                    {isUploadingCharacterImage ? "Uploading..." : "Upload Image"}
+                  </span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          {/* V2V Generation Controls: Aspect Ratio & Model Picker */}
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Ratio className="w-4 h-4 text-violet-400" />
+                <h3 className="font-semibold text-zinc-100 text-sm tracking-wide">
+                  V2V GENERATION CONTROLS
+                </h3>
+              </div>
+              <Badge variant="purple" className="text-[10px] uppercase font-mono">
+                {aspectRatio} • {v2vModel}
+              </Badge>
+            </div>
+
+            {/* Aspect Ratio Selector */}
+            <div className="space-y-1.5">
+              <label className="text-xs text-zinc-400 font-semibold uppercase tracking-wider block">
+                Output Aspect Ratio
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {(["16:9", "9:16", "1:1"] as const).map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setAspectRatio(r)}
+                    className={`py-2 px-3 rounded-lg text-xs font-bold transition border ${
+                      aspectRatio === r
+                        ? "bg-violet-600 text-white border-violet-500 shadow-lg shadow-violet-900/40"
+                        : "bg-zinc-950/70 border-zinc-800 text-zinc-400 hover:text-zinc-200"
+                    }`}
+                  >
+                    {r === "16:9" ? "16:9 Landscape" : r === "9:16" ? "9:16 Portrait" : "1:1 Square"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* V2V Motion Diffusion Model Picker */}
+            <div className="space-y-1.5 pt-1">
+              <label className="text-xs text-zinc-400 font-semibold uppercase tracking-wider block">
+                Inference Model Engine
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { id: "mimic-motion", name: "MimicMotion", tag: "Pose-Guided" },
+                  { id: "wan-v2v", name: "Wan-Video V2V", tag: "Temporal 4K" },
+                  { id: "champ", name: "Champ 3D", tag: "Parametric" },
+                  { id: "kling-motion", name: "Kling Motion", tag: "Cinema Flow" },
+                ].map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setV2vModel(m.id as any)}
+                    className={`p-2.5 rounded-lg text-left transition border ${
+                      v2vModel === m.id
+                        ? "bg-violet-600/30 border-violet-500 text-violet-200 shadow"
+                        : "bg-zinc-950/70 border-zinc-800 text-zinc-400 hover:text-zinc-200"
+                    }`}
+                  >
+                    <div className="font-bold text-xs text-zinc-100">{m.name}</div>
+                    <div className="text-[10px] text-zinc-400 font-mono">{m.tag}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* 3D Rendering & Post-Processing Controls */}
@@ -849,30 +978,87 @@ export default function MotionSwapStudioPage() {
               </button>
             </div>
 
-            {/* Code Snippet Box */}
+            {/* Code Snippet Box with Tabs */}
+            <div className="flex gap-2 border-b border-zinc-800 pb-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setApiTab("motion_swap")}
+                className={`px-3 py-1 rounded-md font-semibold transition ${
+                  apiTab === "motion_swap"
+                    ? "bg-violet-600 text-white"
+                    : "text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                V2V Motion Transfer (/api/v2v/generate)
+              </button>
+              <button
+                type="button"
+                onClick={() => setApiTab("motion_search")}
+                className={`px-3 py-1 rounded-md font-semibold transition ${
+                  apiTab === "motion_search"
+                    ? "bg-violet-600 text-white"
+                    : "text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                Status Polling (/api/v2v/status)
+              </button>
+              <button
+                type="button"
+                onClick={() => setApiTab("story")}
+                className={`px-3 py-1 rounded-md font-semibold transition ${
+                  apiTab === "story"
+                    ? "bg-violet-600 text-white"
+                    : "text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                Webhook (/api/v2v/webhook)
+              </button>
+            </div>
+
             <div className="relative">
               <pre className="bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-[11px] font-mono text-zinc-300 overflow-x-auto leading-relaxed max-h-72">
-{`// Generate 3D Character Video via Prompt
-curl -X POST http://localhost:3000/api/jobs \\
+{apiTab === "motion_swap"
+? `// 1. Dispatch Video-to-Video Motion Transfer Job
+curl -X POST http://localhost:3000/api/v2v/generate \\
   -H "Content-Type: application/json" \\
   -d '{
-    "type": "MOTION_SWAP",
-    "customPrompt": "${directorPrompt}",
     "drivingVideoUrl": "${drivingVideoUrl}",
-    "options": {
-      "motion3DType": "${aiCharacter.suggested3DMotion}",
-      "motionFidelity": ${motionFidelity}
-    }
+    "characterImageUrl": "${customCharacterImageUrl || aiCharacter.avatarUrl}",
+    "characterPrompt": "${directorPrompt}",
+    "model": "${v2vModel}",
+    "aspectRatio": "${aspectRatio}",
+    "motionFidelity": ${motionFidelity},
+    "enableAudioSync": true
   }'
 
+// Response (202 Accepted):
+// { "success": true, "job_id": "v2v_172935...", "status": "queued", "poll_url": "/api/v2v/status/v2v_172935..." }`
+: apiTab === "motion_search"
+? `// 2. Poll V2V Motion Transfer Job Status
+curl -X GET http://localhost:3000/api/v2v/status/${jobId || "v2v_1729358..."}
+
 // Response:
-// { "success": true, "jobId": "job_...", "status": "QUEUED", "streamUrl": "/api/jobs/.../stream" }`}
+// {
+//   "job_id": "v2v_...",
+//   "status": "processing", // "queued" | "processing" | "completed" | "failed"
+//   "progress": 65,
+//   "stage": "Isolating subject foreground dynamics via SAM 2...",
+//   "output_video_url": "https://.../swapped_master.mp4"
+// }`
+: `// 3. Receive Async Completion Webhook
+curl -X POST http://localhost:3000/api/v2v/webhook \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "job_id": "v2v_172935...",
+    "status": "COMPLETED",
+    "output_video_url": "https://fal.media/files/.../output.mp4"
+  }'`}
               </pre>
 
               <button
                 type="button"
                 onClick={() => {
-                  const textToCopy = `curl -X POST http://localhost:3000/api/jobs -H "Content-Type: application/json" -d '{"type":"MOTION_SWAP","customPrompt":"${directorPrompt}"}'`;
+                  const textToCopy = `curl -X POST http://localhost:3000/api/v2v/generate -H "Content-Type: application/json" -d '{"drivingVideoUrl":"${drivingVideoUrl}","characterImageUrl":"${customCharacterImageUrl || aiCharacter.avatarUrl}","characterPrompt":"${directorPrompt}","model":"${v2vModel}","aspectRatio":"${aspectRatio}"}'`;
                   navigator.clipboard.writeText(textToCopy);
                   setCopiedSnippet(true);
                   setTimeout(() => setCopiedSnippet(false), 2000);
