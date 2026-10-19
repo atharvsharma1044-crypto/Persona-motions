@@ -19,8 +19,14 @@ export async function POST(req: NextRequest) {
       drivingVideoUrl,
       characterImageUrl,
       characterPrompt,
+      scenePrompt,
+      negativePrompt = "blurry, extra limbs, distorted fingers, warped card, bad anatomy",
+      preserveProps = true,
+      modelEngine = "wan2.1-v2v",
+      depthWeight = 0.85,
+      poseWeight = 0.70,
       aspectRatio = "16:9",
-      model = "mimic-motion", // "mimic-motion" | "wan-v2v" | "champ" | "kling-motion"
+      model = "wan2.1-v2v", // "wan2.1-v2v" | "cogvideox-fun" | "mimic-motion" | "champ"
       motionFidelity = 0.85,
       trimStartTime = 0,
       trimEndTime = 15,
@@ -44,32 +50,39 @@ export async function POST(req: NextRequest) {
 
     const jobId = `v2v_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
-    // Normalize model endpoint name to Fal.ai / Modal models
-    let resolvedModelEndpoint = "fal-ai/mimic-motion";
-    if (model === "wan-v2v" || model.includes("wan")) {
-      resolvedModelEndpoint = "fal-ai/wan-vace";
-    } else if (model === "champ" || model.includes("champ")) {
-      resolvedModelEndpoint = "fal-ai/champ";
-    } else if (model === "kling-motion" || model.includes("kling")) {
-      resolvedModelEndpoint = "fal-ai/kling-video/v3/standard/motion-control";
+    // Normalize model endpoint name to open-weights Wan 2.1 / CogVideoX / Modal models
+    const chosenModel = modelEngine || model;
+    let resolvedModelEndpoint = "wan2.1-v2v";
+    if (chosenModel === "cogvideox-fun" || chosenModel.includes("cogvideo")) {
+      resolvedModelEndpoint = "cogvideox-fun";
+    } else if (chosenModel === "mimic-motion" || chosenModel.includes("mimic")) {
+      resolvedModelEndpoint = "mimic-motion";
+    } else if (chosenModel === "champ" || chosenModel.includes("champ")) {
+      resolvedModelEndpoint = "champ";
     }
 
     // 1. Initial Job State
     const initialJob: ActiveJob = {
       id: jobId,
-      userId: body.userId || "anonymous_v2v_user",
-      type: "MOTION_SWAP",
+      userId: body.userId || "anonymous",
+      type: "CREATIVE_V2V",
       status: "QUEUED",
       progressPercent: 5,
-      currentStage: "Job enqueued in BullMQ. Normalizing input video...",
+      currentStage: "Job enqueued in open-source V2V pipeline. Normalizing video & extracting depth...",
       characterImageUrl: characterImageUrl || "",
       falModelEndpoint: resolvedModelEndpoint,
       params: {
         drivingVideoUrl,
         characterImageUrl,
         characterPrompt,
+        scenePrompt,
+        negativePrompt,
+        preserveProps,
+        modelEngine: resolvedModelEndpoint,
+        depthWeight,
+        poseWeight,
         aspectRatio,
-        model,
+        model: resolvedModelEndpoint,
         resolvedModelEndpoint,
         motionFidelity,
         trimStartTime,

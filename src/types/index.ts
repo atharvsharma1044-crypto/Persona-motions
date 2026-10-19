@@ -30,6 +30,7 @@ export type ShotStatus = "PENDING" | "GENERATING" | "COMPLETED" | "FAILED";
 export type JobStatus = "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED";
 export type JobType =
   | "MOTION_SWAP"
+  | "CREATIVE_V2V"
   | "SHOT_SYNTHESIS"
   | "STORY_STITCH"
   | "EMBEDDING_EXTRACTION";

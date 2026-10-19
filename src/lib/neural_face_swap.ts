@@ -36,6 +36,11 @@ export interface NeuralSwapOptions {
   trimEndTime?: number;
   motionFidelity?: number;
   customPrompt?: string;
+  characterPrompt?: string;
+  scenePrompt?: string;
+  negativePrompt?: string;
+  preserveProps?: boolean;
+  enableAudioSync?: boolean;
   blendStrength?: number;
   enableColorHarmonization?: boolean;
   enableHeadRotation?: boolean;
@@ -312,6 +317,8 @@ export async function synthesizeNeuralCharacterSwap(
     trimStartTime = 0,
     trimEndTime = 15,
     blendStrength = 0.98,
+    preserveProps = true,
+    enableAudioSync = true,
     onProgress,
   } = options;
 
@@ -602,6 +609,25 @@ export async function synthesizeNeuralCharacterSwap(
       ctx.rotate(headTilt);
       ctx.drawImage(rig.headCanvas, -headW * 0.5, -headH * 0.92, headW, headH);
       ctx.restore();
+
+      // 4G. Preserve Props & Hand Objects (e.g. Uno playing cards, phones, accessories)
+      if (preserveProps) {
+        ctx.save();
+        const propBoxW = actorW * 0.28;
+        const propBoxH = actorW * 0.35;
+        const propX = centerX + (rightArmAngle > leftArmAngle ? charW * 0.12 : -charW * 0.12);
+        const propY = shoulderY + armH * 0.62;
+
+        ctx.beginPath();
+        if (typeof (ctx as any).roundRect === "function") {
+          (ctx as any).roundRect(propX - propBoxW * 0.5, propY, propBoxW, propBoxH, 10);
+        } else {
+          ctx.rect(propX - propBoxW * 0.5, propY, propBoxW, propBoxH);
+        }
+        ctx.clip();
+        ctx.drawImage(video, 0, 0, width, height);
+        ctx.restore();
+      }
 
       ctx.restore(); // Restore main character transform
 

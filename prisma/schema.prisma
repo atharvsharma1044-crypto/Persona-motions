@@ -146,3 +146,34 @@ model GenerationJob {
   @@index([projectId])
   @@map("generation_jobs")
 }
+
+model RetargetJob {
+  id               String      @id @default(cuid())
+  userId           String      @default("anonymous")
+  status           String      @default("QUEUED") // QUEUED, PROCESSING, COMPLETED, FAILED
+  type             String      @default("CREATIVE_V2V")
+  
+  // Driving media
+  drivingVideoUrl  String
+  trimStart        Float       @default(0.0)
+  trimEnd          Float       @default(15.0)
+  
+  // Free Creative Prompts & Conditioning
+  characterPrompt  String?     // e.g., "Fluffy British Shorthair cat wearing a black biker leather jacket"
+  scenePrompt      String?     // e.g., "Futuristic glowing white mechanical dragon in desert sunset"
+  negativePrompt   String?     @default("blurry, extra limbs, distorted fingers, warped card, bad anatomy")
+  
+  // Open-Source Engine & Weight Settings
+  modelEngine      String      @default("wan2.1-v2v") // Wan 2.1 or CogVideoX-Fun
+  preserveProps    Boolean     @default(true)         // Enables Depth-Anything-V2 map
+  depthWeight      Float       @default(0.85)
+  poseWeight       Float       @default(0.70)
+  
+  resultVideoUrl   String?
+  errorMessage     String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  @@map("retarget_jobs")
+}
+

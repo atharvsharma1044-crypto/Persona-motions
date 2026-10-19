@@ -51,34 +51,44 @@ const STYLE_PRESETS = [
 
 const PROMPT_INSPIRATIONS = [
   {
+    icon: "🐱",
+    label: "Biker Cat holding Uno Card & Mecha Dragon",
+    prompt: "A hyper-realistic anthropomorphic British Shorthair cat standing on two legs, wearing a stylish black motorcycle leather jacket with silver zipper accents, expressive blue eyes, photorealistic soft fur texture, holding a red Uno card clearly facing the camera, cinematic lighting. An empty asphalt highway during a golden hour sunset with telephone poles, a glowing white and chrome mechanical dragon robot idling on all fours in the background behind the subject, soft atmospheric haze, 8k resolution, cinematic color grading.",
+    characterPrompt: "A hyper-realistic anthropomorphic British Shorthair cat standing on two legs, wearing a stylish black motorcycle leather jacket with silver zipper accents, expressive blue eyes, photorealistic soft fur texture, holding a red Uno card clearly facing the camera, cinematic lighting.",
+    scenePrompt: "An empty asphalt highway during a golden hour sunset with telephone poles, a glowing white and chrome mechanical dragon robot idling on all fours in the background behind the subject, soft atmospheric haze, 8k resolution, cinematic color grading.",
+    negativePrompt: "deformed paws, extra limbs, human face, warped Uno card, missing numbers on card, blurry, melting background, cartoonish, low resolution, bad hands, plastic skin.",
+  },
+  {
     icon: "🕷️",
     label: "Spider-Man 3D Acrobatics",
     prompt: "Spider-Man performing dynamic 3D acrobatics and web swinging between skyscrapers in sunset city",
+    characterPrompt: "Spider-Man in high-detail red and blue webbed suit",
+    scenePrompt: "New York city sunset skyscrapers with atmospheric haze",
+    negativePrompt: "blurry, extra limbs, bad anatomy",
   },
   {
     icon: "🦾",
     label: "Iron Man 3D Flight & Hover",
     prompt: "Iron Man hovering in 3D space with glowing blue arc reactor and repulsors over futuristic city",
+    characterPrompt: "Iron Man in Mark 85 gold and crimson armor",
+    scenePrompt: "Futuristic neon metropolis skyline",
+    negativePrompt: "blurry, bad geometry, low resolution",
   },
   {
     icon: "🗡️",
     label: "Cyberpunk Samurai 3D Strike",
     prompt: "Cyberpunk samurai executing rapid katana strikes in 3D neon rain with volumetric steam",
+    characterPrompt: "Cyberpunk samurai with illuminated cybernetic visor and composite armor",
+    scenePrompt: "Neon alleyway in rain with puddles reflecting holographic ads",
+    negativePrompt: "blurry, warped katana, extra hands",
   },
   {
     icon: "⚡",
     label: "Goku Super Saiyan 3D Blast",
     prompt: "Goku powering up in 3D with golden ki aura particles and energy shockwaves",
-  },
-  {
-    icon: "🦇",
-    label: "Batman 3D Gotham Glide",
-    prompt: "Batman in 3D tactical suit with billowing cape standing on Gotham gargoyle in volumetric moonlight",
-  },
-  {
-    icon: "🚀",
-    label: "Astronaut 3D Spacewalk",
-    prompt: "Astronaut floating weightless in 3D orbit above rotating earth with reflective gold visor",
+    characterPrompt: "Goku in orange martial arts gi with golden spiky hair",
+    scenePrompt: "Wasteland canyon with floating boulders and energy crackle",
+    negativePrompt: "blurry, distorted anatomy",
   },
 ];
 
@@ -129,9 +139,24 @@ export default function MotionSwapStudioPage() {
   const [enableColorHarmonization, setEnableColorHarmonization] = useState<boolean>(true);
   const [enableHeadRotation, setEnableHeadRotation] = useState<boolean>(true);
 
+  // Free Creative Prompts & Props State (Open-Weights V2V Stack)
+  const [characterPersonaPrompt, setCharacterPersonaPrompt] = useState<string>(
+    "A hyper-realistic anthropomorphic British Shorthair cat standing on two legs, wearing a stylish black motorcycle leather jacket with silver zipper accents, expressive blue eyes, photorealistic soft fur texture, holding a red Uno card clearly facing the camera, cinematic lighting."
+  );
+  const [sceneBackgroundPrompt, setSceneBackgroundPrompt] = useState<string>(
+    "An empty asphalt highway during a golden hour sunset with telephone poles, a glowing white and chrome mechanical dragon robot idling on all fours in the background behind the subject, soft atmospheric haze, 8k resolution, cinematic color grading."
+  );
+  const [negativePrompt, setNegativePrompt] = useState<string>(
+    "deformed paws, extra limbs, human face, warped Uno card, missing numbers on card, blurry, melting background, cartoonish, low resolution, bad hands, plastic skin."
+  );
+  const [preserveProps, setPreserveProps] = useState<boolean>(true);
+  const [keepOriginalAudio, setKeepOriginalAudio] = useState<boolean>(true);
+  const [depthWeight, setDepthWeight] = useState<number>(0.85);
+  const [poseWeight, setPoseWeight] = useState<number>(0.70);
+
   // V2V Aspect Ratio & Generation Model Options
   const [aspectRatio, setAspectRatio] = useState<"16:9" | "9:16" | "1:1">("16:9");
-  const [v2vModel, setV2vModel] = useState<"mimic-motion" | "wan-v2v" | "champ" | "kling-motion">("mimic-motion");
+  const [v2vModel, setV2vModel] = useState<"wan2.1-v2v" | "cogvideox-fun" | "mimic-motion" | "champ">("wan2.1-v2v");
   const [customCharacterImageUrl, setCustomCharacterImageUrl] = useState<string | null>(null);
   const [isUploadingCharacterImage, setIsUploadingCharacterImage] = useState<boolean>(false);
 
@@ -317,6 +342,11 @@ export default function MotionSwapStudioPage() {
           trimEndTime: trimEnd,
           motionFidelity,
           customPrompt: `${promptText}. Character: ${char.characterName}. 3D Motion: ${char.suggested3DMotion}. ${char.lightingAesthetic}`,
+          characterPrompt: characterPersonaPrompt || promptText,
+          scenePrompt: sceneBackgroundPrompt,
+          negativePrompt,
+          preserveProps,
+          enableAudioSync: keepOriginalAudio,
           blendStrength,
           enableColorHarmonization,
           enableHeadRotation,
@@ -486,71 +516,147 @@ export default function MotionSwapStudioPage() {
         </div>
       </div>
 
-      {/* Prominent AI Director Prompt & Inspiration Hub */}
-      <div className="bg-gradient-to-br from-violet-950/40 via-zinc-900 to-zinc-900 border border-violet-800/60 rounded-2xl p-6 shadow-2xl space-y-4">
-        <div className="flex items-center justify-between">
+      {/* 100% Free & Open-Source Creative V2V Director Studio */}
+      <div className="bg-gradient-to-br from-violet-950/40 via-zinc-900 to-zinc-900 border border-violet-800/60 rounded-2xl p-6 shadow-2xl space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 pb-3">
           <div className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-violet-400" />
-            <h2 className="font-bold text-zinc-100 text-sm tracking-wide uppercase">
-              AI 3D Video Director Prompt
-            </h2>
+            <div>
+              <h2 className="font-bold text-zinc-100 text-sm tracking-wide uppercase">
+                100% Free Open-Source V2V Creative Pipeline
+              </h2>
+              <p className="text-[11px] text-zinc-400">
+                Self-hostable open-weights (Wan 2.1 • CogVideoX • Depth-Anything-V2 • DWPose) • Zero Paid APIs
+              </p>
+            </div>
           </div>
-          {isSearchingCharacter ? (
-            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-violet-950/80 border border-violet-500/50 text-violet-300 font-mono flex items-center gap-1.5 animate-pulse">
-              <RefreshCw className="w-3 h-3 animate-spin text-violet-400" /> Searching Wikipedia Character Intelligence...
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-mono flex items-center gap-1.5">
+              <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Free Open-Weights Active
             </span>
-          ) : (
-            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 font-mono flex items-center gap-1.5">
-              <CheckCircle2 className="w-3 h-3" /> Auto-Character Search Active • No Photo Needed
+            <span className="text-[10px] px-2.5 py-1 rounded-full bg-violet-950/80 border border-violet-500/50 text-violet-300 font-mono">
+              Depth-Anything-V2: Props Locked
             </span>
-          )}
+          </div>
         </div>
 
-        <p className="text-xs text-zinc-300">
-          Enter any character and their 3D motion. The AI searches the character identity and sets up the 3D spatial animation automatically:
-        </p>
+        {/* 1. Character Persona Input (Anthropomorphic / Fantasy / Creative Characters) */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-bold text-violet-300 uppercase tracking-wide flex items-center gap-1.5">
+              <span>🐱 1. Character Persona Input (Target Subject & Wardrobe)</span>
+            </label>
+            <span className="text-[10px] text-zinc-400 font-mono">Prompt or Reference Image</span>
+          </div>
+          <textarea
+            rows={2}
+            value={characterPersonaPrompt}
+            onChange={(e) => {
+              setCharacterPersonaPrompt(e.target.value);
+              setDirectorPrompt(e.target.value);
+            }}
+            placeholder="e.g. A hyper-realistic anthropomorphic British Shorthair cat standing on two legs, wearing a stylish black motorcycle leather jacket with silver zipper accents, expressive blue eyes, photorealistic soft fur texture, holding a red Uno card clearly facing the camera, cinematic lighting..."
+            className="w-full bg-zinc-950/90 border border-violet-700/60 rounded-xl p-3 text-xs text-zinc-100 focus:outline-none focus:border-violet-400 font-medium shadow-inner resize-none"
+          />
+        </div>
 
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="relative flex-1">
-            <textarea
-              rows={2}
-              value={directorPrompt}
-              onChange={(e) => setDirectorPrompt(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  handleGenerate3DVideo();
-                }
-              }}
-              placeholder="e.g. Iron Man hovering in 3D with glowing repulsors in futuristic city, Spider-Man swinging in 3D, Cyberpunk samurai katana strike..."
-              className="w-full bg-zinc-950/90 border border-violet-700/60 rounded-xl p-3 text-sm text-zinc-100 focus:outline-none focus:border-violet-400 font-medium shadow-inner resize-none"
-            />
+        {/* 2. Background Elements & Secondary Subjects Input (e.g. Mecha Dragons) */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-bold text-violet-300 uppercase tracking-wide flex items-center gap-1.5">
+            <span>🐉 2. Background Elements & Secondary Subjects (Environment & Creatures)</span>
+          </label>
+          <textarea
+            rows={2}
+            value={sceneBackgroundPrompt}
+            onChange={(e) => setSceneBackgroundPrompt(e.target.value)}
+            placeholder="e.g. An empty asphalt highway during a golden hour sunset with telephone poles, a glowing white and chrome mechanical dragon robot idling on all fours in the background behind the subject, soft atmospheric haze, 8k resolution, cinematic color grading..."
+            className="w-full bg-zinc-950/90 border border-zinc-700/80 rounded-xl p-3 text-xs text-zinc-100 focus:outline-none focus:border-violet-400 font-medium shadow-inner resize-none"
+          />
+        </div>
+
+        {/* 3. Negative Prompt (Deformities & Artifact Filters) */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-bold text-zinc-400 uppercase tracking-wide flex items-center gap-1.5">
+            <span>🛡️ 3. Negative Prompt (Prop & Anatomy Guidance)</span>
+          </label>
+          <input
+            type="text"
+            value={negativePrompt}
+            onChange={(e) => setNegativePrompt(e.target.value)}
+            placeholder="deformed paws, extra limbs, human face, warped Uno card, missing numbers on card, blurry, melting background..."
+            className="w-full bg-zinc-950/90 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-300 focus:outline-none focus:border-violet-500 font-mono shadow-inner"
+          />
+        </div>
+
+        {/* 4. Creative Controls Bar: Prop Stability Switch & Audio Passthrough Switch */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+          {/* Prop Stability Switch */}
+          <div className="flex items-center justify-between p-3 rounded-xl bg-zinc-950/80 border border-violet-800/40 hover:border-violet-600/70 transition">
+            <div className="pr-2">
+              <div className="font-bold text-xs text-zinc-100 flex items-center gap-1.5">
+                <span>🃏 Preserve Props & Hand Objects</span>
+              </div>
+              <div className="text-[10px] text-zinc-400">
+                Locks Uno cards & props rigid in 3D using Depth-Anything-V2.
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer shrink-0">
+              <input
+                type="checkbox"
+                checked={preserveProps}
+                onChange={(e) => setPreserveProps(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-9 h-5 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-violet-600"></div>
+            </label>
           </div>
 
+          {/* Audio Passthrough Switch */}
+          <div className="flex items-center justify-between p-3 rounded-xl bg-zinc-950/80 border border-violet-800/40 hover:border-violet-600/70 transition">
+            <div className="pr-2">
+              <div className="font-bold text-xs text-zinc-100 flex items-center gap-1.5">
+                <span>🔊 Keep Original Video Audio / Lip Sync</span>
+              </div>
+              <div className="text-[10px] text-zinc-400">
+                Lossless audio remuxing & audio cadence sync.
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer shrink-0">
+              <input
+                type="checkbox"
+                checked={keepOriginalAudio}
+                onChange={(e) => setKeepOriginalAudio(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-9 h-5 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-violet-600"></div>
+            </label>
+          </div>
+
+          {/* Generate Button */}
           <Button
             type="button"
             variant="gradient"
             size="lg"
-            onClick={() => handleGenerate3DVideo()}
-            disabled={isProcessing || !directorPrompt.trim()}
-            className="sm:w-48 font-bold text-xs shadow-xl shadow-violet-900/50 h-auto py-3 shrink-0"
+            onClick={() => handleGenerate3DVideo(`${characterPersonaPrompt}. ${sceneBackgroundPrompt}`)}
+            disabled={isProcessing}
+            className="w-full font-bold text-xs shadow-xl shadow-violet-900/60 py-3 h-auto"
           >
             {isProcessing ? (
               <>
-                <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Generating...
+                <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Rendering Creative V2V...
               </>
             ) : (
               <>
-                <Compass className="w-4 h-4 mr-2" /> Make 3D Video
+                <Zap className="w-4 h-4 mr-2 fill-current" /> Generate 3D Creative Video (Free)
               </>
             )}
           </Button>
         </div>
 
         {/* Quick Inspiration Chips */}
-        <div className="space-y-1.5 pt-1">
+        <div className="space-y-1.5 pt-2 border-t border-zinc-800/80">
           <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold block">
-            Click Quick 3D Character Inspirations:
+            Click Quick 3D Creative Test Presets:
           </span>
           <div className="flex flex-wrap gap-2">
             {PROMPT_INSPIRATIONS.map((item) => (
@@ -558,10 +664,13 @@ export default function MotionSwapStudioPage() {
                 key={item.label}
                 type="button"
                 onClick={() => {
+                  if (item.characterPrompt) setCharacterPersonaPrompt(item.characterPrompt);
+                  if (item.scenePrompt) setSceneBackgroundPrompt(item.scenePrompt);
+                  if (item.negativePrompt) setNegativePrompt(item.negativePrompt);
                   setDirectorPrompt(item.prompt);
                   handleGenerate3DVideo(item.prompt);
                 }}
-                className="px-2.5 py-1.5 rounded-lg bg-zinc-950/80 hover:bg-violet-950/80 border border-zinc-800 hover:border-violet-600 text-xs text-zinc-300 hover:text-violet-200 transition-all shadow-sm flex items-center gap-1.5 group"
+                className="px-3 py-1.5 rounded-lg bg-zinc-950/80 hover:bg-violet-950/80 border border-zinc-800 hover:border-violet-600 text-xs text-zinc-300 hover:text-violet-200 transition-all shadow-sm flex items-center gap-1.5 group"
               >
                 <span>{item.icon}</span>
                 <span className="font-medium">{item.label}</span>
@@ -850,10 +959,10 @@ export default function MotionSwapStudioPage() {
               </label>
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  { id: "mimic-motion", name: "MimicMotion", tag: "Pose-Guided" },
-                  { id: "wan-v2v", name: "Wan-Video V2V", tag: "Temporal 4K" },
-                  { id: "champ", name: "Champ 3D", tag: "Parametric" },
-                  { id: "kling-motion", name: "Kling Motion", tag: "Cinema Flow" },
+                  { id: "wan2.1-v2v", name: "Wan 2.1 V2V", tag: "Open-Weights 14B" },
+                  { id: "cogvideox-fun", name: "CogVideoX-Fun", tag: "Open-Weights DiT" },
+                  { id: "mimic-motion", name: "MimicMotion", tag: "Free Local Pose" },
+                  { id: "champ", name: "Champ 3D", tag: "Parametric Rig" },
                 ].map((m) => (
                   <button
                     key={m.id}
@@ -878,11 +987,77 @@ export default function MotionSwapStudioPage() {
             <div className="flex items-center gap-2 mb-2">
               <Sliders className="w-5 h-5 text-violet-400" />
               <h3 className="font-semibold text-zinc-100 text-sm tracking-wide">
-                3D SPATIAL & COHERENCE CONTROLS
+                OPEN-SOURCE PROP & DEPTH GUIDANCE
               </h3>
             </div>
 
             <div className="space-y-3 text-xs">
+              {/* Prop Stability Switch */}
+              <div className="flex items-center justify-between p-3 rounded-lg bg-zinc-950/70 border border-zinc-800/80">
+                <div>
+                  <div className="font-semibold text-zinc-200">Preserve Props & Hand Objects</div>
+                  <div className="text-zinc-400 text-[11px]">
+                    Locks Uno cards & accessories in 3D using Depth-Anything-V2.
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={preserveProps}
+                  onChange={(e) => setPreserveProps(e.target.checked)}
+                  className="w-4 h-4 rounded border-zinc-700 text-violet-600 focus:ring-violet-500 bg-zinc-900 cursor-pointer"
+                />
+              </div>
+
+              {/* Audio Passthrough Switch */}
+              <div className="flex items-center justify-between p-3 rounded-lg bg-zinc-950/70 border border-zinc-800/80">
+                <div>
+                  <div className="font-semibold text-zinc-200">Keep Original Video Audio / Lip Sync</div>
+                  <div className="text-zinc-400 text-[11px]">
+                    Lossless FFmpeg audio passthrough and temporal sync.
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={keepOriginalAudio}
+                  onChange={(e) => setKeepOriginalAudio(e.target.checked)}
+                  className="w-4 h-4 rounded border-zinc-700 text-violet-600 focus:ring-violet-500 bg-zinc-900 cursor-pointer"
+                />
+              </div>
+
+              {/* Depth-Anything-V2 Weight */}
+              <div className="p-3 rounded-lg bg-zinc-950/70 border border-zinc-800/80 space-y-1.5">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-semibold text-zinc-200">Depth-Anything-V2 Weight</span>
+                  <span className="font-mono text-violet-400">{depthWeight.toFixed(2)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.5}
+                  max={1.0}
+                  step={0.05}
+                  value={depthWeight}
+                  onChange={(e) => setDepthWeight(parseFloat(e.target.value))}
+                  className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-violet-500"
+                />
+              </div>
+
+              {/* DWPose Weight */}
+              <div className="p-3 rounded-lg bg-zinc-950/70 border border-zinc-800/80 space-y-1.5">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-semibold text-zinc-200">DWPose Skeletal Weight</span>
+                  <span className="font-mono text-violet-400">{poseWeight.toFixed(2)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.5}
+                  max={1.0}
+                  step={0.05}
+                  value={poseWeight}
+                  onChange={(e) => setPoseWeight(parseFloat(e.target.value))}
+                  className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-violet-500"
+                />
+              </div>
+
               {/* SAM 2 Isolation */}
               <div className="flex items-center justify-between p-3 rounded-lg bg-zinc-950/70 border border-zinc-800/80">
                 <div>
