@@ -429,9 +429,22 @@ function simulateBackgroundJobProgress(
             "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4";
         }
       } else if (type === "SHOT_SYNTHESIS") {
-        sampleOutput = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyBlazes.mp4";
+        const cinematicShots = [
+          "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+          "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyBlazes.mp4",
+          "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
+          "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4",
+          "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4",
+        ];
+        let hash = 0;
+        const str = jobId + ((currentJob?.params?.prompt as string) || "");
+        for (let i = 0; i < str.length; i++) hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
+        sampleOutput = cinematicShots[hash % cinematicShots.length];
       } else {
-        sampleOutput = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
+        const shotUrls = (currentJob?.params?.shotVideoUrls as string[]) || [];
+        sampleOutput =
+          shotUrls[0] ||
+          "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
       }
     }
 
